@@ -62,6 +62,17 @@ npm run dev
 
 When the backend runs outside Docker, point the Evolution webhook at your machine, e.g. `WEBHOOK_GLOBAL_URL=http://host.docker.internal:5080/webhook/evolution?token=...`.
 
+## Releasing
+
+Pushing a version tag builds the dashboard and backend into one Docker image and publishes it to GitHub Container Registry (`.github/workflows/release.yml`):
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The image is tagged `1.0.0`, `1.0` and `latest` as `ghcr.io/97067883ludo/xibo-whatsapp-bot`. To run it on a server, replace `build: .` in `docker-compose.yml` with `image: ghcr.io/97067883ludo/xibo-whatsapp-bot:1.0.0`.
+
 ## Before going live
 
 - **Login.** The dashboard has no authentication yet (reviewer is stored as "Beoordelaar"). Add Microsoft Entra ID login (`Microsoft.Identity.Web`) or put it behind your company's reverse proxy with SSO before exposing it.
