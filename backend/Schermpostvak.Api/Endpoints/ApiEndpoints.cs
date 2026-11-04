@@ -1,0 +1,156 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Schermpostvak.Api.Data;
+using Schermpostvak.Api.Services;
+
+namespace Schermpostvak.Api.Endpoints;
+
+public record ItemDto(
+    Guid Id, string Type, string Status,
+    string SenderName, string SenderJid,
+    string ChatJid, string ChatName, bool ChatIsGroup,
+    string Caption, DateTime ReceivedAt, double? DurationSeconds,
+    string ThumbUrl, string FileUrl,
+    string? Screen, DateTime? ShowFrom, DateTime? ShowUntil, int? DisplaySeconds,
+    string? ReviewedBy, string? Error);
+
+public record ApproveRequest(string Screen, DateTime ShowFrom, DateTime ShowUntil, int? DisplaySeconds, int Rotation);
+public record RejectRequest(string Reason);
+public record ChatDto(string Jid, string Name, bool IsGroup, bool Enabled, DateTime FirstSeenAt);
+public record EnableRequest(bool Enabled);
+
+/// <summary>JSON API used by the dashboard.</summary>
+public static class ApiEndpoints
+{
+    // TODO: replace with the signed-in reviewer once login (e.g. Microsoft Entra ID) is added.
+    private const string Reviewer = "Beoordelaar";
+
+    public static void MapApiEndpoints(this WebApplication app)
+    {
+        var api = app.MapGroup("/api");
+
+        api.MapGet("/status", async (AppDbContext db, EvolutionClient evolution, CancellationToken ct) => new
+        {
+            WhatsApp = await evolution.GetConnectionStateAsync(ct),
+            Pending = await db.MediaItems.CountAsync(m => m.Status == MediaStatus.Pending, ct),
+            Live = await db.MediaItems.CountAsync(m => m.Status == MediaStatus.Live || m.Status == MediaStatus.Approved, ct),
+            NewChats = await db.Chats.CountAsync(c => !c.Enabled, ct),
+            EnabledChats = await db.Chats.CountAsync(c => c.Enabled, ct)
+        });
+
+        api.MapGet("/config", (IOptions<XiboOptions> xibo) => new
+        {
+            Screens = new[] { "Alle schermen" }.Concat(xibo.Value.Screens.Select(s => s.Name)),
+            xibo.Value.DefaultDisplaySeconds
+        });
+
+        // Review queue
+        api.MapGet("/items", async (string? status, AppDbContext db, CancellationToken ct) =>
+        {
+            var wanted = Enum.TryParse<MediaStatus>(status, true, out var s) ? s : MediaStatus.Pending;
+            var items = await db.MediaItems.Include(m => m.Chat)
+                .Where(m => m.Status == wanted)
+                .OrderByDescending(m => m.ReceivedAt)
+                .ToListAsync(ct);
+            return items.Select(ToDto);
+        });
+
+        api.MapGet("/items/{id:guid}/thumb", async (Guid id, AppDbContext db, MediaProcessor files) =>
+        {
+            var item = await db.MediaItems.FindAsync(id);
+            return item?.ThumbPath is null ? Results.NotFound() : Results.File(files.Absolute(item.ThumbPath), "image/jpeg");
+        });
+
+        api.MapGet("/items/{id:guid}/file", async (Guid id, AppDbContext db, MediaProcessor files) =>
+        {
+            var item = await db.MediaItems.FindAsync(id);
+            if (item?.FilePath is null) return Results.NotFound();
+            var mime = item.Type == MediaType.Video ? "video/mp4" : "image/jpeg";
+            return Results.File(files.Absolute(item.FilePath), mime, enableRangeProcessing: true);
+        });
+
+        api.MapPost("/items/{id:guid}/approve", async (Guid id, ApproveRequest req, AppDbContext db, IOptions<XiboOptions> xibo, CancellationToken ct) =>
+        {
+            var item = await db.MediaItems.FindAsync([id], ct);
+            if (item is null) return Results.NotFound();
+            if (item.Status != MediaStatus.Pending) return Results.Conflict("Dit item is al beoordeeld.");
+            if (req.ShowUntil <= req.ShowFrom) return Results.BadRequest("‘Tonen tot’ moet na ‘Tonen vanaf’ liggen.");
+            if (req.Screen != "Alle schermen" && xibo.Value.Screens.All(s => s.Name != req.Screen))
+                return Results.BadRequest("Onbekend scherm.");
+
+            item.Status = MediaStatus.Approved;
+            item.Screen = req.Screen;
+            item.ShowFrom = req.ShowFrom;
+            item.ShowUntil = req.ShowUntil;
+            item.DisplaySeconds = req.DisplaySeconds ?? xibo.Value.DefaultDisplaySeconds;
+            item.Rotation = ((req.Rotation % 360) + 360) % 360;
+            item.ReviewedBy = Reviewer;
+            item.ReviewedAt = DateTime.UtcNow;
+            item.Attempts = 0;
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
+
+        api.MapPost("/items/{id:guid}/reject", async (Guid id, RejectRequest req, AppDbContext db, CancellationToken ct) =>
+        {
+            var item = await db.MediaItems.FindAsync([id], ct);
+            if (item is null) return Results.NotFound();
+            if (item.Status != MediaStatus.Pending) return Results.Conflict("Dit item is al beoordeeld.");
+
+            item.Status = MediaStatus.Rejected;
+            item.RejectReason = req.Reason;
+            item.ReviewedBy = Reviewer;
+            item.ReviewedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
+
+        // Live on screens
+        api.MapGet("/live", async (AppDbContext db, CancellationToken ct) =>
+        {
+            var items = await db.MediaItems.Include(m => m.Chat)
+                .Where(m => m.Status == MediaStatus.Live || m.Status == MediaStatus.Approved)
+                .OrderBy(m => m.ShowUntil)
+                .ToListAsync(ct);
+            return items.Select(ToDto);
+        });
+
+        api.MapPost("/live/{id:guid}/remove", async (Guid id, AppDbContext db, XiboClient xibo, CancellationToken ct) =>
+        {
+            var item = await db.MediaItems.FindAsync([id], ct);
+            if (item is null) return Results.NotFound();
+
+            foreach (var widgetId in (item.XiboWidgetIds ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+                await xibo.DeleteWidgetAsync(int.Parse(widgetId), ct);
+            if (item.XiboMediaId is { } mediaId) await xibo.DeleteMediaAsync(mediaId, ct);
+
+            item.Status = MediaStatus.Removed;
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
+
+        // Chats
+        api.MapGet("/chats", async (AppDbContext db, CancellationToken ct) =>
+            await db.Chats.OrderBy(c => c.Enabled).ThenBy(c => c.Name)
+                .Select(c => new ChatDto(c.Jid, c.Name, c.IsGroup, c.Enabled, DateTime.SpecifyKind(c.FirstSeenAt, DateTimeKind.Utc)))
+                .ToListAsync(ct));
+
+        api.MapPut("/chats/{jid}/enabled", async (string jid, EnableRequest req, AppDbContext db, CancellationToken ct) =>
+        {
+            var chat = await db.Chats.FindAsync([jid], ct);
+            if (chat is null) return Results.NotFound();
+            chat.Enabled = req.Enabled;
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
+    }
+
+    private static ItemDto ToDto(MediaItem m) => new(
+        m.Id, m.Type.ToString(), m.Status.ToString(),
+        m.SenderName, m.SenderJid,
+        m.ChatJid, m.Chat?.Name ?? m.ChatJid, m.Chat?.IsGroup ?? false,
+        m.Caption, DateTime.SpecifyKind(m.ReceivedAt, DateTimeKind.Utc), m.DurationSeconds,
+        $"/api/items/{m.Id}/thumb", $"/api/items/{m.Id}/file",
+        m.Screen, m.ShowFrom, m.ShowUntil, m.DisplaySeconds,
+        m.ReviewedBy, m.Error);
+}

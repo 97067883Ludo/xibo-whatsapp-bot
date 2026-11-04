@@ -1,0 +1,55 @@
+services:
+  backend:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ConnectionStrings__Default: "Data Source=/data/schermpostvak.db"
+      Storage__Root: "/data/media"
+      Webhook__Token: "${WEBHOOK_TOKEN}"
+      Evolution__BaseUrl: "http://evolution:8080"
+      Evolution__ApiKey: "${EVOLUTION_API_KEY}"
+      Evolution__Instance: "${EVOLUTION_INSTANCE}"
+      Xibo__BaseUrl: "${XIBO_BASE_URL}"
+      Xibo__ClientId: "${XIBO_CLIENT_ID}"
+      Xibo__ClientSecret: "${XIBO_CLIENT_SECRET}"
+    volumes:
+      - ./data/backend:/data
+    depends_on:
+      - evolution
+
+  evolution:
+    # WhatsApp gateway (Baileys-based). Check for the latest v2 tag before deploying.
+    image: atendai/evolution-api:v2.2.3
+    restart: unless-stopped
+    ports:
+      - "8081:8080" # manager UI at http://localhost:8081/manager (scan the QR code here)
+    environment:
+      SERVER_URL: "http://localhost:8081"
+      AUTHENTICATION_API_KEY: "${EVOLUTION_API_KEY}"
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: "postgresql"
+      DATABASE_CONNECTION_URI: "postgresql://evolution:${POSTGRES_PASSWORD}@postgres:5432/evolution?schema=public"
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_URL: "http://backend:8080/webhook/evolution?token=${WEBHOOK_TOKEN}"
+      WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: "false"
+      WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
+    volumes:
+      - ./data/evolution:/evolution/instances
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: evolution
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data

@@ -1,0 +1,15 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.swp
+
+# Local SQLite database and collected media
+*.db
+*.db-shm
+*.db-wal
+**/[Dd]ata/media/
+
+# Local overrides
+appsettings.*.local.json

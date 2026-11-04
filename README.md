@@ -1,0 +1,71 @@
+# Schermpostvak
+
+Collects photos and videos sent to a WhatsApp number, lets a reviewer approve or reject them in a dashboard, and publishes approved items to Xibo screens.
+
+```
+WhatsApp chats ──> Evolution API ──webhook──> backend (ASP.NET Core) ──> Xibo CMS ──> screens
+                                                   │
+                                          dashboard (Vue + Reka UI)
+```
+
+## Repository layout
+
+| Path | What it is |
+| --- | --- |
+| `backend/Schermpostvak.Api` | ASP.NET Core (.NET 10) API, webhook, background worker, SQLite |
+| `frontend` | Vue 3 + Vite + Reka UI dashboard (Dutch UI) |
+| `docker-compose.yml` | Backend, Evolution API (WhatsApp gateway) and Postgres for Evolution |
+| `Dockerfile` | Builds the dashboard and backend into one image (with ffmpeg) |
+| `Schermpostvak.slnx` | Solution file for Visual Studio / Rider / `dotnet` |
+
+## How it works
+
+1. **Evolution API** is linked to a dedicated WhatsApp number (use its own SIM, never a personal number) and posts every incoming message to `/webhook/evolution`.
+2. The **webhook** registers each chat. New chats start **disabled**; media is only collected from chats a reviewer has switched on under *Chats*.
+3. The **worker** (every 5 seconds) downloads the media, converts it (photos to JPG without EXIF/GPS, videos to H.264 MP4), makes a thumbnail, skips duplicates and puts the item in the review queue.
+4. A reviewer approves (screens, show-from, show-until, time on screen, rotation) or rejects with a reason.
+5. The worker uploads approved items to the **Xibo library**, adds them to the playlist of each chosen screen and sets the widget expiry. Expired items are cleaned up from the library.
+
+## First-time setup
+
+1. Copy `.env.example` to `.env` and fill in the secrets.
+2. In Xibo, create an application (*Applications → Add application*, client credentials) and put its id and secret in `.env`.
+3. Create one playlist per screen in Xibo and put the playlist ids in `backend/Schermpostvak.Api/appsettings.json` under `Xibo:Screens` (or override them with environment variables such as `Xibo__Screens__0__PlaylistId`).
+4. Start everything:
+   ```bash
+   docker compose up -d --build
+   ```
+5. Open the Evolution manager at http://localhost:8081/manager, create an instance with the name from `EVOLUTION_INSTANCE`, and scan the QR code with the bot's phone.
+6. Open the dashboard at http://localhost:8080, go to *Chats* and switch on the chats you want to collect from.
+
+## Local development
+
+```bash
+# terminal 1: WhatsApp gateway only
+docker compose up -d evolution postgres
+
+# terminal 2: backend on http://localhost:5080 (needs ffmpeg installed: brew install ffmpeg)
+cd backend/Schermpostvak.Api
+dotnet user-secrets init
+dotnet user-secrets set "Webhook:Token" "..."
+dotnet user-secrets set "Evolution:ApiKey" "..."
+dotnet user-secrets set "Xibo:BaseUrl" "https://..."
+dotnet user-secrets set "Xibo:ClientId" "..."
+dotnet user-secrets set "Xibo:ClientSecret" "..."
+dotnet run
+
+# terminal 3: dashboard on http://localhost:5173 (proxies /api to the backend)
+cd frontend
+npm install
+npm run dev
+```
+
+When the backend runs outside Docker, point the Evolution webhook at your machine, e.g. `WEBHOOK_GLOBAL_URL=http://host.docker.internal:5080/webhook/evolution?token=...`.
+
+## Before going live
+
+- **Login.** The dashboard has no authentication yet (reviewer is stored as "Beoordelaar"). Add Microsoft Entra ID login (`Microsoft.Identity.Web`) or put it behind your company's reverse proxy with SSO before exposing it.
+- **Migrations.** The database is created with `EnsureCreated`. Switch to EF Core migrations before the schema changes.
+- **Verify API versions.** Evolution API and Xibo endpoints vary per version. Check `Services/EvolutionClient.cs` against your Evolution version and `Services/XiboClient.cs` against your CMS's `/swagger.json` (especially the widget expiry endpoint).
+- **Time zone.** Show-from/until are stored as entered and sent to Xibo as-is, so the server and CMS should use the same time zone.
+- **Privacy.** Tell everyone in the enabled chats that what they send may be shown on the screens, and how to ask for removal.
