@@ -22,7 +22,7 @@ public class Chat
     [Key] public string Jid { get; set; } = "";
     public string Name { get; set; } = "";
     public bool IsGroup { get; set; }
-    /// <summary>Media from a chat is only collected after a reviewer enables it.</summary>
+    /// <summary>New chats are enabled automatically; media from a disabled chat is ignored.</summary>
     public bool Enabled { get; set; }
     public DateTime FirstSeenAt { get; set; } = DateTime.UtcNow;
 }

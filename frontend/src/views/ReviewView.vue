@@ -177,7 +177,7 @@ onUnmounted(() => window.clearInterval(timer))
       <section aria-label="Media in afwachting" class="queue">
         <div v-if="!loading && visible.length === 0" class="empty">
           <strong>Alles is beoordeeld</strong>
-          <span>Nieuwe foto’s en video’s uit de ingeschakelde chats verschijnen hier.</span>
+          <span>Nieuwe foto’s en video’s uit WhatsApp verschijnen hier.</span>
         </div>
         <div v-else class="grid">
           <button

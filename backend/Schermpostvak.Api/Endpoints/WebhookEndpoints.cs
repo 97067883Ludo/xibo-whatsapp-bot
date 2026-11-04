@@ -52,7 +52,7 @@ public static class WebhookEndpoints
         var isGroup = chatJid.EndsWith("@g.us");
         var pushName = Str(msg, "pushName") ?? "";
 
-        // Every chat is registered, but media is only collected once a reviewer enables the chat.
+        // Every chat is registered and collected from automatically; a reviewer can switch a chat off to block it.
         var chat = await db.Chats.FindAsync([chatJid], ct);
         if (chat is null)
         {
@@ -60,7 +60,7 @@ public static class WebhookEndpoints
             {
                 Jid = chatJid,
                 IsGroup = isGroup,
-                Enabled = false,
+                Enabled = true,
                 Name = isGroup
                     ? await evolution.GetGroupSubjectAsync(chatJid, ct) ?? chatJid
                     : pushName != "" ? pushName : chatJid

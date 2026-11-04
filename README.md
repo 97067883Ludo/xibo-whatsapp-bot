@@ -21,7 +21,7 @@ WhatsApp chats ──> Evolution API ──webhook──> backend (ASP.NET Core)
 ## How it works
 
 1. **Evolution API** is linked to a dedicated WhatsApp number (use its own SIM, never a personal number) and posts every incoming message to `/webhook/evolution`.
-2. The **webhook** registers each chat. New chats start **disabled**; media is only collected from chats a reviewer has switched on under *Chats*.
+2. The **webhook** registers each chat. New chats start **enabled**, so media is collected automatically; a reviewer can switch a chat off under *Chats* to stop collecting from it.
 3. The **worker** (every 5 seconds) downloads the media, converts it (photos to JPG without EXIF/GPS, videos to H.264 MP4), makes a thumbnail, skips duplicates and puts the item in the review queue.
 4. A reviewer approves (screens, show-from, show-until, time on screen, rotation) or rejects with a reason.
 5. The worker uploads approved items to the **Xibo library**, adds them to the playlist of each chosen screen and sets the widget expiry. Expired items are cleaned up from the library.
@@ -36,7 +36,7 @@ WhatsApp chats ──> Evolution API ──webhook──> backend (ASP.NET Core)
    docker compose up -d --build
    ```
 5. Open the Evolution manager at http://localhost:8081/manager, create an instance with the name from `EVOLUTION_INSTANCE`, and scan the QR code with the bot's phone.
-6. Open the dashboard at http://localhost:8080, go to *Chats* and switch on the chats you want to collect from.
+6. Open the dashboard at http://localhost:8080. Photos and videos from every chat land in the review queue; switch off any chat under *Chats* that you want to ignore.
 
 ## Local development
 

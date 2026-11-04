@@ -32,7 +32,7 @@ onMounted(load)
     <div class="page-head">
       <div>
         <h1>Chats</h1>
-        <p>Foto’s en video’s worden alleen opgehaald uit ingeschakelde chats. Nieuwe groepen en privéchats verschijnen hier automatisch en staan uit tot iemand ze inschakelt.</p>
+        <p>Foto’s en video’s worden automatisch opgehaald uit alle chats. Nieuwe groepen en privéchats verschijnen hier vanzelf en staan direct aan. Zet een chat uit om er niets meer uit op te halen.</p>
       </div>
     </div>
 
