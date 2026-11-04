@@ -45,6 +45,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tab.router-link-exact-active { color: var(--text); font-weight: 500; border-bottom-color: var(--accent); }
 .count { padding: 1px 8px; border-radius: 999px; background: var(--muted); color: var(--text-2); font-size: 12px; font-weight: 500; }
 .tab.router-link-exact-active .count { background: var(--accent); color: var(--on-accent); }
+.count.failed, .tab.router-link-exact-active .count.failed { margin-left: 4px; background: var(--danger-bg); color: var(--danger); }
 
 /* Page */
 .page { max-width: 1440px; margin: 0 auto; padding: 24px; display: flex; flex-direction: column; gap: 20px; }

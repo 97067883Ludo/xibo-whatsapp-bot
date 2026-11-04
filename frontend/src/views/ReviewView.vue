@@ -4,7 +4,7 @@ import { SliderRange, SliderRoot, SliderThumb, SliderTrack, ToggleGroupItem, Tog
 import { api, formatDuration, refreshStatus, relativeTime, toDateInput, type Config, type Item } from '../api'
 
 const items = ref<Item[]>([])
-const config = ref<Config>({ screens: ['Alle schermen'], defaultDisplaySeconds: 10 })
+const config = ref<Config>({ defaultDisplaySeconds: 10, tag: 'onscreen' })
 const loading = ref(true)
 const selectedId = ref<string | null>(null)
 const typeFilter = ref<string>('all')
@@ -12,9 +12,10 @@ const chatFilter = ref('all')
 const sort = ref<'newest' | 'oldest' | 'sender'>('newest')
 const toast = ref<{ text: string; error?: boolean } | null>(null)
 const busy = ref(false)
+const failed = ref<Item[]>([])
+const failedBusy = ref<string | null>(null)
 
 // Review form
-const screen = ref('Alle schermen')
 const fromDate = ref('')
 const untilDate = ref('')
 const untilTime = ref('18:00')
@@ -59,7 +60,6 @@ function resetForm() {
   const today = new Date()
   const until = new Date()
   until.setDate(today.getDate() + 14)
-  screen.value = 'Alle schermen'
   fromDate.value = toDateInput(today)
   untilDate.value = toDateInput(until)
   untilTime.value = '18:00'
@@ -77,7 +77,9 @@ function showToast(text: string, error = false) {
 
 async function load() {
   try {
-    items.value = await api.items('Pending')
+    const [pending, failedDownloads] = await Promise.all([api.items('Pending'), api.items('Failed')])
+    items.value = pending
+    failed.value = failedDownloads
     if (!selected.value) selectedId.value = visible.value[0]?.id ?? null
   } catch (e) {
     showToast((e as Error).message, true)
@@ -98,14 +100,15 @@ async function approve() {
   busy.value = true
   try {
     await api.approve(item.id, {
-      screen: screen.value,
       showFrom: `${fromDate.value}T00:00:00`,
       showUntil: `${untilDate.value}T${untilTime.value}:00`,
       displaySeconds: item.type === 'Photo' ? duration.value[0] : null,
       rotation: rotation.value
     })
     next(item.id)
-    showToast(`Goedgekeurd. Wordt geplaatst op ${screen.value.toLowerCase()}.`)
+    showToast(fromDate.value > toDateInput(new Date())
+      ? `Goedgekeurd. Komt op de schermen vanaf ${new Date(fromDate.value).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' })}.`
+      : 'Goedgekeurd. Komt binnen enkele seconden op de schermen.')
     refreshStatus()
   } catch (e) {
     showToast((e as Error).message, true)
@@ -127,6 +130,34 @@ async function reject() {
     showToast((e as Error).message, true)
   } finally {
     busy.value = false
+  }
+}
+
+async function retryDownload(i: Item) {
+  failedBusy.value = i.id
+  try {
+    await api.retry(i.id)
+    failed.value = failed.value.filter((x) => x.id !== i.id)
+    showToast('Wordt opnieuw opgehaald. Lukt het, dan verschijnt het item hieronder.')
+    refreshStatus()
+    window.setTimeout(load, 6000)
+  } catch (e) {
+    showToast((e as Error).message, true)
+  } finally {
+    failedBusy.value = null
+  }
+}
+
+async function dismissDownload(i: Item) {
+  failedBusy.value = i.id
+  try {
+    await api.reject(i.id, 'Ophalen mislukt')
+    failed.value = failed.value.filter((x) => x.id !== i.id)
+    refreshStatus()
+  } catch (e) {
+    showToast((e as Error).message, true)
+  } finally {
+    failedBusy.value = null
   }
 }
 
@@ -175,6 +206,25 @@ onUnmounted(() => window.clearInterval(timer))
 
     <div class="review">
       <section aria-label="Media in afwachting" class="queue">
+        <div v-if="failed.length" class="failed-box" role="region" aria-label="Niet opgehaald">
+          <div class="failed-head">
+            <strong>{{ failed.length === 1 ? '1 item kon niet worden opgehaald' : `${failed.length} items konden niet worden opgehaald` }}</strong>
+            <span>Probeer het opnieuw. Lukt het weer niet, dan is het bestand waarschijnlijk niet meer beschikbaar in WhatsApp.</span>
+          </div>
+          <ul class="failed-list">
+            <li v-for="i in failed" :key="i.id">
+              <div class="failed-info">
+                <span class="ellipsis" style="font-weight: 500">{{ i.type === 'Video' ? 'Video' : 'Foto' }} van {{ i.senderName || i.senderJid }}</span>
+                <span class="ellipsis muted-sm">{{ i.chatName }} · {{ relativeTime(i.receivedAt) }}</span>
+                <span v-if="i.error" class="ellipsis failed-error" :title="i.error">{{ i.error }}</span>
+              </div>
+              <div class="failed-actions">
+                <button class="btn sm primary" :disabled="failedBusy === i.id" @click="retryDownload(i)">Opnieuw ophalen</button>
+                <button class="btn sm" :disabled="failedBusy === i.id" @click="dismissDownload(i)">Negeren</button>
+              </div>
+            </li>
+          </ul>
+        </div>
         <div v-if="!loading && visible.length === 0" class="empty">
           <strong>Alles is beoordeeld</strong>
           <span>Nieuwe foto’s en video’s uit WhatsApp verschijnen hier.</span>
@@ -227,11 +277,6 @@ onUnmounted(() => window.clearInterval(timer))
           <hr />
 
           <h2>Weergave-instellingen</h2>
-          <label class="field">Schermen
-            <select v-model="screen" class="select">
-              <option v-for="s in config.screens" :key="s">{{ s }}</option>
-            </select>
-          </label>
           <label class="field">Tonen vanaf
             <input v-model="fromDate" type="date" class="input" />
           </label>
@@ -280,6 +325,15 @@ onUnmounted(() => window.clearInterval(timer))
 <style scoped>
 .review { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
 .queue { flex: 999 1 560px; min-width: 0; }
+.failed-box { margin-bottom: 16px; padding: 16px; border: 1px solid var(--danger-border); border-radius: var(--radius-lg); background: var(--danger-bg); display: flex; flex-direction: column; gap: 12px; }
+.failed-head { display: flex; flex-direction: column; gap: 2px; }
+.failed-head strong { color: var(--danger); }
+.failed-head span { color: var(--text-2); font-size: 13px; }
+.failed-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.failed-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: var(--radius); background: var(--surface); }
+.failed-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 240px; }
+.failed-error { font-size: 12px; color: var(--danger); }
+.failed-actions { display: flex; gap: 8px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
 .card { text-align: left; padding: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); cursor: pointer; overflow: hidden; display: flex; flex-direction: column; }
 .card[aria-pressed='true'] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }

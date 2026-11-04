@@ -24,11 +24,6 @@ public class XiboOptions
     public string ClientId { get; set; } = "";
     public string ClientSecret { get; set; } = "";
     public int DefaultDisplaySeconds { get; set; } = 10;
-    public List<XiboScreen> Screens { get; set; } = [];
-}
-
-public class XiboScreen
-{
-    public string Name { get; set; } = "";
-    public int PlaylistId { get; set; }
+    /// <summary>Library tag the dynamic playlists on the screens filter on.</summary>
+    public string Tag { get; set; } = "onscreen";
 }

@@ -36,17 +36,18 @@ export interface Status {
   whatsApp: string
   pending: number
   live: number
+  failedPlacements: number
+  failedDownloads: number
   newChats: number
   enabledChats: number
 }
 
 export interface Config {
-  screens: string[]
   defaultDisplaySeconds: number
+  tag: string
 }
 
 export interface ApproveBody {
-  screen: string
   showFrom: string
   showUntil: string
   displaySeconds: number | null
@@ -74,6 +75,7 @@ export const api = {
   reject: (id: string, reason: string) => request<void>(`/api/items/${id}/reject`, post({ reason })),
   live: () => request<Item[]>('/api/live'),
   remove: (id: string) => request<void>(`/api/live/${id}/remove`, post()),
+  retry: (id: string) => request<void>(`/api/items/${id}/retry`, post()),
   chats: () => request<Chat[]>('/api/chats'),
   setChatEnabled: (jid: string, enabled: boolean) =>
     request<void>(`/api/chats/${encodeURIComponent(jid)}/enabled`, { method: 'PUT', body: JSON.stringify({ enabled }) })

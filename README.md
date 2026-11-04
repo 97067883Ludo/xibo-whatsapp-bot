@@ -23,14 +23,14 @@ WhatsApp chats ──> Evolution API ──webhook──> backend (ASP.NET Core)
 1. **Evolution API** is linked to a dedicated WhatsApp number (use its own SIM, never a personal number) and posts every incoming message to `/webhook/evolution`.
 2. The **webhook** registers each chat. New chats start **enabled**, so media is collected automatically; a reviewer can switch a chat off under *Chats* to stop collecting from it.
 3. The **worker** (every 5 seconds) downloads the media, converts it (photos to JPG without EXIF/GPS, videos to H.264 MP4), makes a thumbnail, skips duplicates and puts the item in the review queue.
-4. A reviewer approves (screens, show-from, show-until, time on screen, rotation) or rejects with a reason.
-5. The worker uploads approved items to the **Xibo library**, adds them to the playlist of each chosen screen and sets the widget expiry. Expired items are cleaned up from the library.
+4. A reviewer approves (show-from, show-until, time on screen, rotation) or rejects with a reason.
+5. From show-from on, the worker uploads approved items to the **Xibo library** with the tag `onscreen` (setting `Xibo:Tag`). The layouts on the screens use a dynamic playlist that shows all media with that tag. The media gets an expiry at show-until, so Xibo deletes it itself; the worker also removes it as a fallback.
 
 ## First-time setup
 
 1. Copy `.env.example` to `.env` and fill in the secrets.
 2. In Xibo, create an application (*Applications → Add application*, client credentials) and put its id and secret in `.env`.
-3. Create one playlist per screen in Xibo and put the playlist ids in `backend/Schermpostvak.Api/appsettings.json` under `Xibo:Screens` (or override them with environment variables such as `Xibo__Screens__0__PlaylistId`).
+3. In Xibo, make sure the layouts on the screens contain a dynamic playlist that filters on the media tag `onscreen`. Use another tag with the `XIBO_TAG` environment variable.
 4. Start everything:
    ```bash
    docker compose up -d --build
@@ -77,6 +77,6 @@ The image is tagged `1.0.0`, `1.0` and `latest` as `ghcr.io/97067883ludo/xibo-wh
 
 - **Login.** The dashboard has no authentication yet (reviewer is stored as "Beoordelaar"). Add Microsoft Entra ID login (`Microsoft.Identity.Web`) or put it behind your company's reverse proxy with SSO before exposing it.
 - **Migrations.** The database is created with `EnsureCreated`. Switch to EF Core migrations before the schema changes.
-- **Verify API versions.** Evolution API and Xibo endpoints vary per version. Check `Services/EvolutionClient.cs` against your Evolution version and `Services/XiboClient.cs` against your CMS's `/swagger.json` (especially the widget expiry endpoint).
+- **Verify API versions.** Evolution API and Xibo endpoints vary per version. Check `Services/EvolutionClient.cs` against your Evolution version and `Services/XiboClient.cs` against your CMS's `/swagger.json` (especially `PUT /library/{id}`, used to set the tag, duration and expiry).
 - **Time zone.** Show-from/until are stored as entered and sent to Xibo as-is, so the server and CMS should use the same time zone.
 - **Privacy.** Tell everyone in the enabled chats that what they send may be shown on the screens, and how to ask for removal.

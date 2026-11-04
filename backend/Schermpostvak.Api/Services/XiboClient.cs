@@ -69,43 +69,28 @@ public class XiboClient(HttpClient http, IOptions<XiboOptions> options, XiboToke
         return first.GetProperty("mediaId").GetInt32();
     }
 
-    /// <summary>Adds the media to a playlist and returns the id of the widget Xibo created for it.</summary>
-    public async Task<int> AssignToPlaylistAsync(int playlistId, int mediaId, int? durationSeconds, CancellationToken ct)
+    /// <summary>
+    /// Puts the media on the screens: tags it so the dynamic playlists pick it up, sets how long
+    /// it is shown per turn, and lets Xibo delete it itself at show-until.
+    /// </summary>
+    public async Task PublishMediaAsync(int mediaId, string name, int durationSeconds, string tag, DateTime until, CancellationToken ct)
     {
         await AuthorizeAsync(ct);
-        var fields = new List<KeyValuePair<string, string>> { new("media[]", mediaId.ToString()) };
-        if (durationSeconds is { } d)
+        var res = await http.PutAsync($"library/{mediaId}", new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            fields.Add(new("duration", d.ToString()));
-            fields.Add(new("useDuration", "1"));
-        }
-        var res = await http.PostAsync($"playlist/library/assign/{playlistId}", new FormUrlEncodedContent(fields), ct);
-        res.EnsureSuccessStatusCode();
-
-        // The response is the playlist; find the widget that holds our media.
-        var playlist = Unwrap(await res.Content.ReadFromJsonAsync<JsonElement>(ct));
-        foreach (var widget in playlist.GetProperty("widgets").EnumerateArray().Reverse())
-        {
-            if (widget.TryGetProperty("mediaIds", out var ids) &&
-                ids.EnumerateArray().Any(i => i.ValueKind == JsonValueKind.Number && i.GetInt32() == mediaId))
-                return widget.GetProperty("widgetId").GetInt32();
-        }
-        throw new InvalidOperationException($"Widget for media {mediaId} not found in playlist {playlistId}");
-    }
-
-    /// <summary>Sets when the widget starts and stops showing; Xibo deletes it after expiry.</summary>
-    public async Task SetWidgetExpiryAsync(int widgetId, DateTime from, DateTime until, CancellationToken ct)
-    {
-        await AuthorizeAsync(ct);
-        var res = await http.PutAsync($"playlist/widget/{widgetId}/expiry", new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["fromDt"] = from.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
-            ["toDt"] = until.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+            ["name"] = name,
+            ["duration"] = durationSeconds.ToString(CultureInfo.InvariantCulture),
+            ["retired"] = "0",
+            ["tags"] = tag,
+            ["updateInLayouts"] = "1",
+            ["expires"] = until.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
             ["deleteOnExpiry"] = "1"
         }), ct);
-        res.EnsureSuccessStatusCode();
+        if (!res.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Xibo could not tag media {mediaId}: {(int)res.StatusCode} {await res.Content.ReadAsStringAsync(ct)}");
     }
 
+    /// <summary>Only used to clean up items placed by older versions, which used playlist widgets.</summary>
     public async Task DeleteWidgetAsync(int widgetId, CancellationToken ct)
     {
         await AuthorizeAsync(ct);

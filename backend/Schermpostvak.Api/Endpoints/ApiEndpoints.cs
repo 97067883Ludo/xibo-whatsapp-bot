@@ -14,7 +14,7 @@ public record ItemDto(
     string? Screen, DateTime? ShowFrom, DateTime? ShowUntil, int? DisplaySeconds,
     string? ReviewedBy, string? Error);
 
-public record ApproveRequest(string Screen, DateTime ShowFrom, DateTime ShowUntil, int? DisplaySeconds, int Rotation);
+public record ApproveRequest(DateTime ShowFrom, DateTime ShowUntil, int? DisplaySeconds, int Rotation);
 public record RejectRequest(string Reason);
 public record ChatDto(string Jid, string Name, bool IsGroup, bool Enabled, DateTime FirstSeenAt);
 public record EnableRequest(bool Enabled);
@@ -34,14 +34,16 @@ public static class ApiEndpoints
             WhatsApp = await evolution.GetConnectionStateAsync(ct),
             Pending = await db.MediaItems.CountAsync(m => m.Status == MediaStatus.Pending, ct),
             Live = await db.MediaItems.CountAsync(m => m.Status == MediaStatus.Live || m.Status == MediaStatus.Approved, ct),
+            FailedDownloads = await db.MediaItems.CountAsync(m => m.Status == MediaStatus.Failed && m.ReviewedAt == null, ct),
+            FailedPlacements = await db.MediaItems.CountAsync(m => m.Status == MediaStatus.Failed && m.ReviewedAt != null, ct),
             NewChats = await db.Chats.CountAsync(c => !c.Enabled, ct),
             EnabledChats = await db.Chats.CountAsync(c => c.Enabled, ct)
         });
 
         api.MapGet("/config", (IOptions<XiboOptions> xibo) => new
         {
-            Screens = new[] { "Alle schermen" }.Concat(xibo.Value.Screens.Select(s => s.Name)),
-            xibo.Value.DefaultDisplaySeconds
+            xibo.Value.DefaultDisplaySeconds,
+            xibo.Value.Tag
         });
 
         // Review queue
@@ -50,6 +52,8 @@ public static class ApiEndpoints
             var wanted = Enum.TryParse<MediaStatus>(status, true, out var s) ? s : MediaStatus.Pending;
             var items = await db.MediaItems.Include(m => m.Chat)
                 .Where(m => m.Status == wanted)
+                // Failed placements (already reviewed) are listed under /live; here only failed downloads
+                .Where(m => wanted != MediaStatus.Failed || m.ReviewedAt == null)
                 .OrderByDescending(m => m.ReceivedAt)
                 .ToListAsync(ct);
             return items.Select(ToDto);
@@ -75,11 +79,9 @@ public static class ApiEndpoints
             if (item is null) return Results.NotFound();
             if (item.Status != MediaStatus.Pending) return Results.Conflict("Dit item is al beoordeeld.");
             if (req.ShowUntil <= req.ShowFrom) return Results.BadRequest("‘Tonen tot’ moet na ‘Tonen vanaf’ liggen.");
-            if (req.Screen != "Alle schermen" && xibo.Value.Screens.All(s => s.Name != req.Screen))
-                return Results.BadRequest("Onbekend scherm.");
+            if (req.ShowUntil <= DateTime.Now) return Results.BadRequest("‘Tonen tot’ ligt al in het verleden.");
 
             item.Status = MediaStatus.Approved;
-            item.Screen = req.Screen;
             item.ShowFrom = req.ShowFrom;
             item.ShowUntil = req.ShowUntil;
             item.DisplaySeconds = req.DisplaySeconds ?? xibo.Value.DefaultDisplaySeconds;
@@ -95,7 +97,8 @@ public static class ApiEndpoints
         {
             var item = await db.MediaItems.FindAsync([id], ct);
             if (item is null) return Results.NotFound();
-            if (item.Status != MediaStatus.Pending) return Results.Conflict("Dit item is al beoordeeld.");
+            var failedDownload = item.Status == MediaStatus.Failed && item.ReviewedAt == null;
+            if (item.Status != MediaStatus.Pending && !failedDownload) return Results.Conflict("Dit item is al beoordeeld.");
 
             item.Status = MediaStatus.Rejected;
             item.RejectReason = req.Reason;
@@ -109,7 +112,8 @@ public static class ApiEndpoints
         api.MapGet("/live", async (AppDbContext db, CancellationToken ct) =>
         {
             var items = await db.MediaItems.Include(m => m.Chat)
-                .Where(m => m.Status == MediaStatus.Live || m.Status == MediaStatus.Approved)
+                .Where(m => m.Status == MediaStatus.Live || m.Status == MediaStatus.Approved
+                         || (m.Status == MediaStatus.Failed && m.ReviewedAt != null))
                 .OrderBy(m => m.ShowUntil)
                 .ToListAsync(ct);
             return items.Select(ToDto);
@@ -120,11 +124,27 @@ public static class ApiEndpoints
             var item = await db.MediaItems.FindAsync([id], ct);
             if (item is null) return Results.NotFound();
 
-            foreach (var widgetId in (item.XiboWidgetIds ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
-                await xibo.DeleteWidgetAsync(int.Parse(widgetId), ct);
+            foreach (var widgetId in WidgetIds.Parse(item.XiboWidgetIds).Values)
+                await xibo.DeleteWidgetAsync(widgetId, ct);
             if (item.XiboMediaId is { } mediaId) await xibo.DeleteMediaAsync(mediaId, ct);
 
             item.Status = MediaStatus.Removed;
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
+
+        // Try a failed item again: approved items are placed again, others are downloaded again.
+        api.MapPost("/items/{id:guid}/retry", async (Guid id, AppDbContext db, CancellationToken ct) =>
+        {
+            var item = await db.MediaItems.FindAsync([id], ct);
+            if (item is null) return Results.NotFound();
+            if (item.Status != MediaStatus.Failed) return Results.Conflict("Dit item is niet mislukt.");
+            if (item.ReviewedAt != null && item.ShowUntil <= DateTime.Now)
+                return Results.Conflict("De periode ‘Tonen tot’ is al voorbij. Haal het item weg en keur het opnieuw goed.");
+
+            item.Status = item.ReviewedAt != null ? MediaStatus.Approved : MediaStatus.Downloading;
+            item.Attempts = 0;
+            item.Error = null;
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });

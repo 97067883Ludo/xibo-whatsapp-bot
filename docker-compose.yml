@@ -14,6 +14,7 @@ services:
       Xibo__BaseUrl: "${XIBO_BASE_URL}"
       Xibo__ClientId: "${XIBO_CLIENT_ID}"
       Xibo__ClientSecret: "${XIBO_CLIENT_SECRET}"
+      Xibo__Tag: "${XIBO_TAG:-onscreen}"
     volumes:
       - ./data/backend:/data
     depends_on:

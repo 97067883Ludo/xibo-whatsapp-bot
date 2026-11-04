@@ -122,11 +122,12 @@ public class MediaProcessor(
         await image.WriteAsync(thumb, ct);
     }
 
-    // 2. Upload approved items to Xibo and put them on the chosen screens
+    // 2. Upload approved items to Xibo and tag them, from show-from on
     private async Task PublishApprovedAsync(CancellationToken ct)
     {
+        var now = DateTime.Now;
         var items = await db.MediaItems
-            .Where(m => m.Status == MediaStatus.Approved && m.Attempts < MaxAttempts)
+            .Where(m => m.Status == MediaStatus.Approved && m.Attempts < MaxAttempts && m.ShowFrom <= now && m.ShowUntil > now)
             .Take(5).ToListAsync(ct);
 
         foreach (var item in items)
@@ -142,18 +143,18 @@ public class MediaProcessor(
                     item.Rotation = 0; // applied, don't rotate again on retry
                 }
 
-                item.XiboMediaId ??= await xibo.UploadAsync(path, $"whatsapp-{item.Id:N}", ct);
-
-                var widgetIds = new List<int>();
-                foreach (var screen in ScreensFor(item.Screen))
+                var name = $"whatsapp-{item.Id:N}";
+                if (item.XiboMediaId is null)
                 {
-                    var duration = item.Type == MediaType.Photo ? item.DisplaySeconds : null;
-                    var widgetId = await xibo.AssignToPlaylistAsync(screen.PlaylistId, item.XiboMediaId.Value, duration, ct);
-                    await xibo.SetWidgetExpiryAsync(widgetId, item.ShowFrom!.Value, item.ShowUntil!.Value, ct);
-                    widgetIds.Add(widgetId);
+                    item.XiboMediaId = await xibo.UploadAsync(path, name, ct);
+                    await db.SaveChangesAsync(ct); // don't upload again if tagging fails
                 }
 
-                item.XiboWidgetIds = string.Join(',', widgetIds);
+                var seconds = item.Type == MediaType.Photo
+                    ? item.DisplaySeconds ?? xiboOptions.Value.DefaultDisplaySeconds
+                    : Math.Max(1, (int)Math.Ceiling(item.DurationSeconds ?? 0));
+                await xibo.PublishMediaAsync(item.XiboMediaId.Value, name, seconds, xiboOptions.Value.Tag, item.ShowUntil!.Value, ct);
+
                 item.Status = MediaStatus.Live;
                 item.Error = null;
             }
@@ -165,17 +166,12 @@ public class MediaProcessor(
         }
     }
 
-    public IEnumerable<XiboScreen> ScreensFor(string? screen) =>
-        string.IsNullOrEmpty(screen) || screen == "Alle schermen"
-            ? xiboOptions.Value.Screens
-            : xiboOptions.Value.Screens.Where(s => s.Name == screen);
-
-    // 3. Xibo removes expired widgets itself; we mark them and clean up the library
+    // 3. Xibo deletes expired media itself; we mark the items and make sure the media is gone
     private async Task ExpireAsync(CancellationToken ct)
     {
         var now = DateTime.Now;
         var expired = await db.MediaItems
-            .Where(m => m.Status == MediaStatus.Live && m.ShowUntil < now)
+            .Where(m => (m.Status == MediaStatus.Live || m.Status == MediaStatus.Approved) && m.ShowUntil < now)
             .ToListAsync(ct);
 
         foreach (var item in expired)
@@ -218,4 +214,29 @@ public class MediaProcessor(
         if (item.Attempts >= MaxAttempts) item.Status = MediaStatus.Failed;
         log.LogWarning(ex, "Step {Step} failed for {Id} (attempt {Attempt})", step, item.Id, item.Attempts);
     }
+}
+
+/// <summary>
+/// Stores which Xibo widget belongs to which playlist as "playlistId:widgetId,...".
+/// Older entries without a playlist id are kept under a negative key so they can still be removed.
+/// </summary>
+public static class WidgetIds
+{
+    public static Dictionary<int, int> Parse(string? value)
+    {
+        var result = new Dictionary<int, int>();
+        var legacy = -1;
+        foreach (var part in (value ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pair = part.Split(':');
+            if (pair.Length == 2 && int.TryParse(pair[0], out var playlist) && int.TryParse(pair[1], out var widget))
+                result[playlist] = widget;
+            else if (int.TryParse(part, out var old))
+                result[legacy--] = old;
+        }
+        return result;
+    }
+
+    public static string Format(Dictionary<int, int> placed) =>
+        string.Join(',', placed.Select(p => $"{p.Key}:{p.Value}"));
 }

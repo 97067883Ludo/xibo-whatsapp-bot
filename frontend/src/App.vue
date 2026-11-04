@@ -33,8 +33,8 @@ onUnmounted(() => window.clearInterval(timer))
   </header>
 
   <nav class="tabs" aria-label="Onderdelen">
-    <RouterLink to="/" class="tab">Te beoordelen <span class="count">{{ status?.pending ?? 0 }}</span></RouterLink>
-    <RouterLink to="/live" class="tab">Live op schermen <span class="count">{{ status?.live ?? 0 }}</span></RouterLink>
+    <RouterLink to="/" class="tab">Te beoordelen <span class="count">{{ status?.pending ?? 0 }}</span><span v-if="status?.failedDownloads" class="count failed">{{ status.failedDownloads }} mislukt</span></RouterLink>
+    <RouterLink to="/live" class="tab">Live op schermen <span class="count">{{ status?.live ?? 0 }}</span><span v-if="status?.failedPlacements" class="count failed">{{ status.failedPlacements }} mislukt</span></RouterLink>
     <RouterLink to="/chats" class="tab">
       Chats <span v-if="status?.newChats" class="count">{{ status.newChats }} nieuw</span>
     </RouterLink>

@@ -59,7 +59,7 @@ public class MediaItem
 
     // Xibo
     public int? XiboMediaId { get; set; }
-    /// <summary>Comma-separated widget ids, one per playlist the item was assigned to.</summary>
+    /// <summary>"playlistId:widgetId" pairs, comma-separated, one per playlist the item was assigned to.</summary>
     public string? XiboWidgetIds { get; set; }
 
     // Processing
