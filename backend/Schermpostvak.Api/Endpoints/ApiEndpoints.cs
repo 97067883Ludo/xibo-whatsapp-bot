@@ -123,14 +123,23 @@ public static class ApiEndpoints
             return items.Select(ToDto);
         });
 
-        api.MapPost("/live/{id:guid}/remove", async (Guid id, AppDbContext db, XiboClient xibo, LiveUpdates live, CancellationToken ct) =>
+        // Takes an item off the screens by removing its tag; the media stays in the Xibo library.
+        api.MapPost("/live/{id:guid}/remove", async (Guid id, AppDbContext db, XiboClient xibo, IOptions<XiboOptions> xiboOptions, LiveUpdates live, CancellationToken ct) =>
         {
             var item = await db.MediaItems.FindAsync([id], ct);
             if (item is null) return Results.NotFound();
 
-            foreach (var widgetId in WidgetIds.Parse(item.XiboWidgetIds).Values)
-                await xibo.DeleteWidgetAsync(widgetId, ct);
-            if (item.XiboMediaId is { } mediaId) await xibo.DeleteMediaAsync(mediaId, ct);
+            try
+            {
+                // Items placed by older versions sit in playlists as widgets instead of being tagged
+                foreach (var widgetId in WidgetIds.Parse(item.XiboWidgetIds).Values)
+                    await xibo.DeleteWidgetAsync(widgetId, ct);
+                if (item.XiboMediaId is { } mediaId) await xibo.UntagMediaAsync(mediaId, xiboOptions.Value.Tag, ct);
+            }
+            catch (Exception ex)
+            {
+                return Results.Text($"Xibo gaf een fout: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+            }
 
             item.Status = MediaStatus.Removed;
             await db.SaveChangesAsync(ct);

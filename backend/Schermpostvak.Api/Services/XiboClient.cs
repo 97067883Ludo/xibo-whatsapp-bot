@@ -94,6 +94,20 @@ public class XiboClient(HttpClient http, IOptions<XiboOptions> options, XiboToke
             throw new InvalidOperationException($"Xibo could not tag media {mediaId}: {(int)res.StatusCode} {await res.Content.ReadAsStringAsync(ct)}");
     }
 
+    /// <summary>
+    /// Takes the media off the screens by removing the tag the dynamic playlists filter on.
+    /// The file stays in the Xibo library.
+    /// </summary>
+    public async Task UntagMediaAsync(int mediaId, string tag, CancellationToken ct)
+    {
+        await AuthorizeAsync(ct);
+        var res = await http.PostAsync($"library/{mediaId}/untag",
+            new FormUrlEncodedContent([new KeyValuePair<string, string>("tag[]", tag)]), ct);
+        if (res.StatusCode == System.Net.HttpStatusCode.NotFound) return; // already deleted in Xibo
+        if (!res.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Xibo could not remove tag '{tag}' from media {mediaId}: {(int)res.StatusCode} {await res.Content.ReadAsStringAsync(ct)}");
+    }
+
     /// <summary>Only used to clean up items placed by older versions, which used playlist widgets.</summary>
     public async Task DeleteWidgetAsync(int widgetId, CancellationToken ct)
     {
