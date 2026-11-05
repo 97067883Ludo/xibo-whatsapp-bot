@@ -49,8 +49,8 @@ public class XiboClient(HttpClient http, IOptions<XiboOptions> options, XiboToke
         }
     }
 
-    /// <summary>Uploads a file to the library and returns its mediaId.</summary>
-    public async Task<int> UploadAsync(string path, string name, CancellationToken ct)
+    /// <summary>Uploads a file to the library (in the given folder, or the API user's home folder) and returns its mediaId.</summary>
+    public async Task<int> UploadAsync(string path, string name, int? folderId, CancellationToken ct)
     {
         await AuthorizeAsync(ct);
         await using var stream = File.OpenRead(path);
@@ -59,6 +59,7 @@ public class XiboClient(HttpClient http, IOptions<XiboOptions> options, XiboToke
         file.Headers.ContentType = new MediaTypeHeaderValue(path.EndsWith(".mp4") ? "video/mp4" : "image/jpeg");
         form.Add(file, "files", Path.GetFileName(path));
         form.Add(new StringContent(name), "name");
+        if (folderId is { } f) form.Add(new StringContent(f.ToString(CultureInfo.InvariantCulture)), "folderId");
 
         var res = await http.PostAsync("library", form, ct);
         res.EnsureSuccessStatusCode();
@@ -123,7 +124,37 @@ public class XiboClient(HttpClient http, IOptions<XiboOptions> options, XiboToke
         if (res.StatusCode != System.Net.HttpStatusCode.NotFound) res.EnsureSuccessStatusCode();
     }
 
+    /// <summary>All library folders as a flat list in tree order, with their depth for indenting.</summary>
+    public async Task<List<XiboFolder>> GetFoldersAsync(CancellationToken ct)
+    {
+        await AuthorizeAsync(ct);
+        var body = Unwrap(await http.GetFromJsonAsync<JsonElement>("folders", ct));
+        var result = new List<XiboFolder>();
+
+        void Walk(JsonElement folder, int depth, string path)
+        {
+            if (folder.ValueKind != JsonValueKind.Object) return; // leaf "children" can be a plain id string
+            var id = folder.TryGetProperty("id", out var i) && i.ValueKind == JsonValueKind.Number ? i.GetInt32()
+                : folder.TryGetProperty("folderId", out var fi) && fi.ValueKind == JsonValueKind.Number ? fi.GetInt32() : 0;
+            var name = folder.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString()
+                : folder.TryGetProperty("folderName", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : null;
+            var disabled = folder.TryGetProperty("type", out var ty) && ty.ValueKind == JsonValueKind.String && ty.GetString() == "disabled";
+            var fullPath = string.IsNullOrEmpty(path) ? name ?? $"Map {id}" : $"{path} / {name}";
+            if (id > 0 && !disabled) result.Add(new XiboFolder(id, name ?? $"Map {id}", fullPath, depth));
+            if (folder.TryGetProperty("children", out var children) && children.ValueKind == JsonValueKind.Array)
+                foreach (var child in children.EnumerateArray()) Walk(child, depth + 1, fullPath);
+        }
+
+        if (body.ValueKind == JsonValueKind.Array)
+            foreach (var root in body.EnumerateArray()) Walk(root, 0, "");
+        else
+            Walk(body, 0, "");
+        return result;
+    }
+
     // Older Xibo versions wrap responses in { "data": ... }
     private static JsonElement Unwrap(JsonElement e) =>
         e.ValueKind == JsonValueKind.Object && e.TryGetProperty("data", out var d) ? d : e;
 }
+
+public record XiboFolder(int Id, string Name, string Path, int Depth);

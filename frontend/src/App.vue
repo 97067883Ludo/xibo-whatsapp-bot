@@ -39,6 +39,7 @@ onUnmounted(() => window.clearInterval(timer))
     <RouterLink to="/chats" class="tab">
       Chats <span v-if="status?.newChats" class="count">{{ status.newChats }} nieuw</span>
     </RouterLink>
+    <RouterLink to="/instellingen" class="tab">Instellingen</RouterLink>
   </nav>
 
   <RouterView />

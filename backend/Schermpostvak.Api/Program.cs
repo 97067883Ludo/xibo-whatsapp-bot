@@ -35,6 +35,7 @@ builder.Services.AddHttpClient<XiboClient>((sp, http) =>
 
 builder.Services.AddSingleton<LiveUpdates>();
 builder.Services.AddSingleton<WorkerSignal>();
+builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddScoped<MediaProcessor>();
 builder.Services.AddHostedService<Worker>();
 

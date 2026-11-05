@@ -19,6 +19,7 @@ public class MediaProcessor(
     IOptions<StorageOptions> storage,
     IOptions<XiboOptions> xiboOptions,
     LiveUpdates live,
+    SettingsStore settings,
     ILogger<MediaProcessor> log)
 {
     private const int MaxAttempts = 5;
@@ -152,7 +153,7 @@ public class MediaProcessor(
                 var name = $"whatsapp-{item.Id:N}";
                 if (item.XiboMediaId is null)
                 {
-                    item.XiboMediaId = await xibo.UploadAsync(path, name, ct);
+                    item.XiboMediaId = await xibo.UploadAsync(path, name, settings.Get().XiboFolderId, ct);
                     await db.SaveChangesAsync(ct); // don't upload again if tagging fails
                 }
 

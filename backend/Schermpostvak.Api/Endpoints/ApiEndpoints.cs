@@ -19,6 +19,7 @@ public record ApproveRequest(DateTime ShowFrom, DateTime? ShowUntil, int? Displa
 public record RejectRequest(string Reason);
 public record ChatDto(string Jid, string Name, bool IsGroup, bool Enabled, DateTime FirstSeenAt);
 public record EnableRequest(bool Enabled);
+public record SettingsRequest(int? XiboFolderId);
 
 /// <summary>JSON API used by the dashboard.</summary>
 public static class ApiEndpoints
@@ -163,6 +164,32 @@ public static class ApiEndpoints
             live.Publish(LiveUpdates.Queue, LiveUpdates.Live);
             worker.Wake();
             return Results.NoContent();
+        });
+
+        // Settings
+        api.MapGet("/settings", (SettingsStore settings) => settings.Get());
+
+        api.MapPut("/settings", async (SettingsRequest req, SettingsStore settings, XiboClient xibo, CancellationToken ct) =>
+        {
+            string? folderName = null;
+            if (req.XiboFolderId is { } folderId)
+            {
+                List<XiboFolder> folders;
+                try { folders = await xibo.GetFoldersAsync(ct); }
+                catch (Exception ex) { return Results.Text($"Xibo gaf een fout: {ex.Message}", statusCode: StatusCodes.Status502BadGateway); }
+                var folder = folders.FirstOrDefault(f => f.Id == folderId);
+                if (folder is null) return Results.BadRequest("Deze map bestaat niet (meer) in Xibo.");
+                folderName = folder.Path;
+            }
+            var updated = settings.Get() with { XiboFolderId = req.XiboFolderId, XiboFolderName = folderName };
+            settings.Save(updated);
+            return Results.Ok(updated);
+        });
+
+        api.MapGet("/xibo/folders", async (XiboClient xibo, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await xibo.GetFoldersAsync(ct)); }
+            catch (Exception ex) { return Results.Text($"Kan de mappen niet ophalen uit Xibo: {ex.Message}", statusCode: StatusCodes.Status502BadGateway); }
         });
 
         // Chats

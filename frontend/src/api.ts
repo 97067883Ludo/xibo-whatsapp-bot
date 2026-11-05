@@ -47,6 +47,18 @@ export interface Config {
   tag: string
 }
 
+export interface Settings {
+  xiboFolderId: number | null
+  xiboFolderName: string | null
+}
+
+export interface XiboFolder {
+  id: number
+  name: string
+  path: string
+  depth: number
+}
+
 export interface ApproveBody {
   showFrom: string
   showUntil?: string | null
@@ -77,6 +89,10 @@ export const api = {
   remove: (id: string) => request<void>(`/api/live/${id}/remove`, post()),
   retry: (id: string) => request<void>(`/api/items/${id}/retry`, post()),
   chats: () => request<Chat[]>('/api/chats'),
+  settings: () => request<Settings>('/api/settings'),
+  saveSettings: (xiboFolderId: number | null) =>
+    request<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify({ xiboFolderId }) }),
+  xiboFolders: () => request<XiboFolder[]>('/api/xibo/folders'),
   setChatEnabled: (jid: string, enabled: boolean) =>
     request<void>(`/api/chats/${encodeURIComponent(jid)}/enabled`, { method: 'PUT', body: JSON.stringify({ enabled }) })
 }
