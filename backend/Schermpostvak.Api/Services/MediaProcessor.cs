@@ -11,7 +11,7 @@ namespace Schermpostvak.Api.Services;
 
 /// <summary>
 /// One pass over the work queue: download new media, publish approved media,
-/// expire media whose show-until has passed, and clean up old rejected files.
+/// expire media whose show-until has passed (items without one stay until removed), and clean up old rejected files.
 /// </summary>
 public class MediaProcessor(
     AppDbContext db,
@@ -133,7 +133,7 @@ public class MediaProcessor(
     {
         var now = DateTime.Now;
         var items = await db.MediaItems
-            .Where(m => m.Status == MediaStatus.Approved && m.Attempts < MaxAttempts && m.ShowFrom <= now && m.ShowUntil > now)
+            .Where(m => m.Status == MediaStatus.Approved && m.Attempts < MaxAttempts && m.ShowFrom <= now && (m.ShowUntil == null || m.ShowUntil > now))
             .OrderBy(m => m.ReviewedAt).Take(5).ToListAsync(ct);
 
         foreach (var item in items)
@@ -159,7 +159,7 @@ public class MediaProcessor(
                 var seconds = item.Type == MediaType.Photo
                     ? item.DisplaySeconds ?? xiboOptions.Value.DefaultDisplaySeconds
                     : Math.Max(1, (int)Math.Ceiling(item.DurationSeconds ?? 0));
-                await xibo.PublishMediaAsync(item.XiboMediaId.Value, name, seconds, xiboOptions.Value.Tag, item.ShowUntil!.Value, ct);
+                await xibo.PublishMediaAsync(item.XiboMediaId.Value, name, seconds, xiboOptions.Value.Tag, item.ShowUntil, ct);
 
                 item.Status = MediaStatus.Live;
                 item.Error = null;
@@ -178,7 +178,7 @@ public class MediaProcessor(
     {
         var now = DateTime.Now;
         var expired = await db.MediaItems
-            .Where(m => (m.Status == MediaStatus.Live || m.Status == MediaStatus.Approved) && m.ShowUntil < now)
+            .Where(m => (m.Status == MediaStatus.Live || m.Status == MediaStatus.Approved) && m.ShowUntil != null && m.ShowUntil < now)
             .ToListAsync(ct);
 
         foreach (var item in expired)

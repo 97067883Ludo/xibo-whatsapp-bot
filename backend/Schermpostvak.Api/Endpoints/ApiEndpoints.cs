@@ -14,7 +14,8 @@ public record ItemDto(
     string? Screen, DateTime? ShowFrom, DateTime? ShowUntil, int? DisplaySeconds,
     string? ReviewedBy, string? Error);
 
-public record ApproveRequest(DateTime ShowFrom, DateTime ShowUntil, int? DisplaySeconds, int Rotation);
+/// <summary>ShowUntil is optional: without it the item stays on the screens until a reviewer removes it.</summary>
+public record ApproveRequest(DateTime ShowFrom, DateTime? ShowUntil, int? DisplaySeconds, int Rotation);
 public record RejectRequest(string Reason);
 public record ChatDto(string Jid, string Name, bool IsGroup, bool Enabled, DateTime FirstSeenAt);
 public record EnableRequest(bool Enabled);
@@ -78,8 +79,8 @@ public static class ApiEndpoints
             var item = await db.MediaItems.FindAsync([id], ct);
             if (item is null) return Results.NotFound();
             if (item.Status != MediaStatus.Pending) return Results.Conflict("Dit item is al beoordeeld.");
-            if (req.ShowUntil <= req.ShowFrom) return Results.BadRequest("‘Tonen tot’ moet na ‘Tonen vanaf’ liggen.");
-            if (req.ShowUntil <= DateTime.Now) return Results.BadRequest("‘Tonen tot’ ligt al in het verleden.");
+            if (req.ShowUntil is { } until && (until <= req.ShowFrom || until <= DateTime.Now))
+                return Results.BadRequest("De einddatum moet na de startdatum en in de toekomst liggen.");
 
             item.Status = MediaStatus.Approved;
             item.ShowFrom = req.ShowFrom;
@@ -117,7 +118,7 @@ public static class ApiEndpoints
             var items = await db.MediaItems.Include(m => m.Chat)
                 .Where(m => m.Status == MediaStatus.Live || m.Status == MediaStatus.Approved
                          || (m.Status == MediaStatus.Failed && m.ReviewedAt != null))
-                .OrderBy(m => m.ShowUntil)
+                .OrderByDescending(m => m.ShowFrom)
                 .ToListAsync(ct);
             return items.Select(ToDto);
         });
@@ -144,7 +145,7 @@ public static class ApiEndpoints
             if (item is null) return Results.NotFound();
             if (item.Status != MediaStatus.Failed) return Results.Conflict("Dit item is niet mislukt.");
             if (item.ReviewedAt != null && item.ShowUntil <= DateTime.Now)
-                return Results.Conflict("De periode ‘Tonen tot’ is al voorbij. Haal het item weg en keur het opnieuw goed.");
+                return Results.Conflict("De einddatum van dit item is al voorbij. Haal het item weg en keur het opnieuw goed.");
 
             item.Status = item.ReviewedAt != null ? MediaStatus.Approved : MediaStatus.Downloading;
             item.Attempts = 0;

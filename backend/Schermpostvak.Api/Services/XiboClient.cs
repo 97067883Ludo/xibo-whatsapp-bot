@@ -71,21 +71,25 @@ public class XiboClient(HttpClient http, IOptions<XiboOptions> options, XiboToke
 
     /// <summary>
     /// Puts the media on the screens: tags it so the dynamic playlists pick it up, sets how long
-    /// it is shown per turn, and lets Xibo delete it itself at show-until.
+    /// it is shown per turn and, when there is an end date, lets Xibo delete it itself at that moment.
     /// </summary>
-    public async Task PublishMediaAsync(int mediaId, string name, int durationSeconds, string tag, DateTime until, CancellationToken ct)
+    public async Task PublishMediaAsync(int mediaId, string name, int durationSeconds, string tag, DateTime? until, CancellationToken ct)
     {
         await AuthorizeAsync(ct);
-        var res = await http.PutAsync($"library/{mediaId}", new FormUrlEncodedContent(new Dictionary<string, string>
+        var fields = new Dictionary<string, string>
         {
             ["name"] = name,
             ["duration"] = durationSeconds.ToString(CultureInfo.InvariantCulture),
             ["retired"] = "0",
             ["tags"] = tag,
-            ["updateInLayouts"] = "1",
-            ["expires"] = until.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
-            ["deleteOnExpiry"] = "1"
-        }), ct);
+            ["updateInLayouts"] = "1"
+        };
+        if (until is { } u)
+        {
+            fields["expires"] = u.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            fields["deleteOnExpiry"] = "1";
+        }
+        var res = await http.PutAsync($"library/{mediaId}", new FormUrlEncodedContent(fields), ct);
         if (!res.IsSuccessStatusCode)
             throw new InvalidOperationException($"Xibo could not tag media {mediaId}: {(int)res.StatusCode} {await res.Content.ReadAsStringAsync(ct)}");
     }

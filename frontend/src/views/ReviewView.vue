@@ -17,8 +17,6 @@ const failedBusy = ref<string | null>(null)
 
 // Review form
 const fromDate = ref('')
-const untilDate = ref('')
-const untilTime = ref('18:00')
 const duration = ref<number[]>([10])
 const rotation = ref(0)
 const rejecting = ref(false)
@@ -58,11 +56,7 @@ function badge(i: Item) {
 
 function resetForm() {
   const today = new Date()
-  const until = new Date()
-  until.setDate(today.getDate() + 14)
   fromDate.value = toDateInput(today)
-  untilDate.value = toDateInput(until)
-  untilTime.value = '18:00'
   duration.value = [config.value.defaultDisplaySeconds]
   rotation.value = 0
   rejecting.value = false
@@ -101,7 +95,6 @@ async function approve() {
   try {
     await api.approve(item.id, {
       showFrom: `${fromDate.value}T00:00:00`,
-      showUntil: `${untilDate.value}T${untilTime.value}:00`,
       displaySeconds: item.type === 'Photo' ? duration.value[0] : null,
       rotation: rotation.value
     })
@@ -281,13 +274,6 @@ onUnmounted(() => { window.clearInterval(timer); stopLive() })
           <label class="field">Tonen vanaf
             <input v-model="fromDate" type="date" class="input" />
           </label>
-          <fieldset class="fieldset">
-            <legend>Tonen tot</legend>
-            <div class="two">
-              <label class="field small">Datum <input v-model="untilDate" type="date" class="input" /></label>
-              <label class="field small">Tijd <input v-model="untilTime" type="time" step="900" class="input" /></label>
-            </div>
-          </fieldset>
           <div v-if="selected.type === 'Photo'" class="field">
             <span style="display: flex; justify-content: space-between">
               Tijd op scherm <span style="font-weight: 400; color: var(--text-2)">{{ duration[0] }} seconden</span>

@@ -28,6 +28,11 @@ function endsSoon(i: Item) {
   return !!i.showUntil && new Date(i.showUntil).getTime() - Date.now() < 24 * 3600 * 1000
 }
 
+/** Items approved before end dates were dropped can still have one. */
+function period(i: Item) {
+  return i.showUntil ? `${formatDateTime(i.showFrom)} – ${formatDateTime(i.showUntil)}` : `Vanaf ${formatDateTime(i.showFrom)}`
+}
+
 async function retry(i: Item) {
   retrying.value = i.id
   try {
@@ -72,7 +77,7 @@ onUnmounted(() => { window.clearInterval(timer); stopLive() })
     <div class="page-head">
       <div>
         <h1>Live op schermen</h1>
-        <p>Goedgekeurde items. Ze krijgen in Xibo de tag ‘onscreen’ en verschijnen zo op alle schermen; na ‘Te zien tot’ verwijdert Xibo ze zelf. Een verwijderd item verdwijnt bij de volgende synchronisatie van de schermen. Lukt plaatsen niet, dan kun je het hier opnieuw proberen.</p>
+        <p>Goedgekeurde items. Ze krijgen in Xibo de tag ‘onscreen’ en verschijnen zo op alle schermen; ze blijven staan tot je ze hier van de schermen haalt. Een verwijderd item verdwijnt bij de volgende synchronisatie van de schermen. Lukt plaatsen niet, dan kun je het hier opnieuw proberen.</p>
       </div>
     </div>
 
@@ -89,7 +94,7 @@ onUnmounted(() => { window.clearInterval(timer); stopLive() })
           <tr>
             <th>Media</th>
             <th>Verzonden door</th>
-            <th>Te zien tot</th>
+            <th>Op de schermen</th>
             <th>Goedgekeurd door</th>
             <th style="text-align: right">Actie</th>
           </tr>
@@ -109,7 +114,7 @@ onUnmounted(() => { window.clearInterval(timer); stopLive() })
               </div>
             </td>
             <td>{{ i.senderName || i.senderJid }}<br /><span style="font-size: 12px; color: var(--text-3)">{{ i.chatName }}</span></td>
-            <td :style="{ color: endsSoon(i) ? 'var(--warn)' : undefined }">{{ formatDateTime(i.showUntil) }}</td>
+            <td :style="{ color: endsSoon(i) ? 'var(--warn)' : undefined }">{{ period(i) }}</td>
             <td>{{ i.reviewedBy }}</td>
             <td style="text-align: right; white-space: nowrap">
               <button v-if="i.status === 'Failed'" class="btn sm primary" :disabled="retrying === i.id" @click="retry(i)" style="margin-right: 8px">Opnieuw proberen</button>

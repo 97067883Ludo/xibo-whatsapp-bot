@@ -23,8 +23,8 @@ WhatsApp chats ──> WAHA ──webhook──> backend (ASP.NET Core) ──> 
 1. **WAHA** is linked to a dedicated WhatsApp number (use its own SIM, never a personal number) and posts every message to `/webhook/waha`: incoming ones and those sent from the bot's own phone (event `message.any`). The webhook downloads photos and videos from WAHA right away, because WAHA deletes its copy after an hour.
 2. The **webhook** registers each chat. New chats start **enabled**, so media is collected automatically; a reviewer can switch a chat off under *Chats* to stop collecting from it.
 3. The **worker** (every 5 seconds) converts the media (photos to JPG without EXIF/GPS, videos to H.264 MP4), makes a thumbnail, skips duplicates and puts the item in the review queue.
-4. A reviewer approves (show-from, show-until, time on screen, rotation) or rejects with a reason.
-5. From show-from on, the worker uploads approved items to the **Xibo library** with the tag `onscreen` (setting `Xibo:Tag`). The layouts on the screens use a dynamic playlist that shows all media with that tag. The media gets an expiry at show-until, so Xibo deletes it itself; the worker also removes it as a fallback.
+4. A reviewer approves (show-from, time on screen, rotation) or rejects with a reason.
+5. From show-from on, the worker uploads approved items to the **Xibo library** with the tag `onscreen` (setting `Xibo:Tag`). The layouts on the screens use a dynamic playlist that shows all media with that tag. Approved items stay on the screens until a reviewer removes them under *Live op schermen*. (Items approved with an end date by older versions still expire at that moment.)
 
 ## First-time setup
 
@@ -78,5 +78,5 @@ The image is tagged `1.0.0`, `1.0` and `latest` as `ghcr.io/97067883ludo/xibo-wh
 - **Login.** The dashboard has no authentication yet (reviewer is stored as "Beoordelaar"). Add Microsoft Entra ID login (`Microsoft.Identity.Web`) or put it behind your company's reverse proxy with SSO before exposing it.
 - **Migrations.** The database is created with `EnsureCreated`. Switch to EF Core migrations before the schema changes.
 - **Verify API versions.** WAHA and Xibo endpoints vary per version. Check `Services/WahaClient.cs` against WAHA's Swagger UI (http://localhost:3000) and `Services/XiboClient.cs` against your CMS's `/swagger.json` (especially `PUT /library/{id}`, used to set the tag, duration and expiry).
-- **Time zone.** Show-from/until are stored as entered and sent to Xibo as-is, so the server and CMS should use the same time zone.
+- **Time zone.** Show-from dates are stored as entered and sent to Xibo as-is, so the server and CMS should use the same time zone.
 - **Privacy.** Tell everyone in the enabled chats that what they send may be shown on the screens, and how to ask for removal.

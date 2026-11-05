@@ -49,7 +49,7 @@ export interface Config {
 
 export interface ApproveBody {
   showFrom: string
-  showUntil: string
+  showUntil?: string | null
   displaySeconds: number | null
   rotation: number
 }
