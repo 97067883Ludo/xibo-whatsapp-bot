@@ -20,7 +20,7 @@ WhatsApp chats ──> WAHA ──webhook──> backend (ASP.NET Core) ──> 
 
 ## How it works
 
-1. **WAHA** is linked to a dedicated WhatsApp number (use its own SIM, never a personal number) and posts every incoming message to `/webhook/waha`. The webhook downloads photos and videos from WAHA right away, because WAHA deletes its copy after an hour.
+1. **WAHA** is linked to a dedicated WhatsApp number (use its own SIM, never a personal number) and posts every message to `/webhook/waha`: incoming ones and those sent from the bot's own phone (event `message.any`). The webhook downloads photos and videos from WAHA right away, because WAHA deletes its copy after an hour.
 2. The **webhook** registers each chat. New chats start **enabled**, so media is collected automatically; a reviewer can switch a chat off under *Chats* to stop collecting from it.
 3. The **worker** (every 5 seconds) converts the media (photos to JPG without EXIF/GPS, videos to H.264 MP4), makes a thumbnail, skips duplicates and puts the item in the review queue.
 4. A reviewer approves (show-from, show-until, time on screen, rotation) or rejects with a reason.

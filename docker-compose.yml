@@ -35,9 +35,9 @@ services:
       # GOWS is lightweight (no browser inside the container)
       WHATSAPP_DEFAULT_ENGINE: "GOWS"
       WHATSAPP_RESTART_ALL_SESSIONS: "True"
-      # Webhook for every session; the backend only handles incoming messages
+      # Webhook for every session: incoming messages and what the bot's own phone sends
       WHATSAPP_HOOK_URL: "http://backend:8080/webhook/waha?token=${WEBHOOK_TOKEN}"
-      WHATSAPP_HOOK_EVENTS: "message"
+      WHATSAPP_HOOK_EVENTS: "message.any"
       WAHA_EVENTS_DOWNLOAD_MEDIA: "true"
       # Host used in media.url; the backend fetches files from here
       WAHA_BASE_URL: "http://waha:3000"
