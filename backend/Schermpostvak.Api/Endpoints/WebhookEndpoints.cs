@@ -35,20 +35,30 @@ public static class WebhookEndpoints
         if (string.IsNullOrEmpty(options.Value.Token) || token != options.Value.Token)
             return Results.Unauthorized();
 
+        var log = loggers.CreateLogger("Schermpostvak.Webhook");
+        IResult Skip(string reason)
+        {
+            log.LogInformation("Webhook skipped: {Reason}", reason);
+            return Results.Ok();
+        }
+
         // "message" = incoming only, "message.any" = also what the bot's own phone sends. Both are collected.
         var evt = Str(body, "event");
         if (evt is not ("message" or "message.any") || !body.TryGetProperty("payload", out var msg)) return Results.Ok();
-        if (Str(body, "session") is { } session && session != wahaOptions.Value.Session) return Results.Ok();
-        if (!Bool(msg, "hasMedia")) return Results.Ok();
+        if (Str(body, "session") is { } session && session != wahaOptions.Value.Session)
+            return Skip($"session '{session}' is not '{wahaOptions.Value.Session}'");
+        var hasMediaObject = msg.TryGetProperty("media", out var m0) && m0.ValueKind == JsonValueKind.Object;
+        if (!Bool(msg, "hasMedia") && !hasMediaObject) return Results.Ok(); // plain text
 
         // For our own messages "from" is the bot's number and "to" is the chat
         var fromMe = Bool(msg, "fromMe");
         var chatJid = fromMe ? Str(msg, "to") : Str(msg, "from");
         var messageId = Str(msg, "id");
-        if (chatJid is null || messageId is null) return Results.Ok();
-        if (chatJid == "status@broadcast" || chatJid.EndsWith("@newsletter")) return Results.Ok();
+        log.LogInformation("Webhook {Event}: media message {Id} in {Chat} (fromMe: {FromMe})", evt, messageId, chatJid, fromMe);
+        if (chatJid is null || messageId is null) return Skip($"no chat or message id (from={Str(msg, "from")}, to={Str(msg, "to")})");
+        if (chatJid == "status@broadcast" || chatJid.EndsWith("@newsletter")) return Skip("status or channel update");
 
-        if (!msg.TryGetProperty("media", out var media) || media.ValueKind != JsonValueKind.Object) return Results.Ok();
+        if (!msg.TryGetProperty("media", out var media) || media.ValueKind != JsonValueKind.Object) return Skip("no media object in payload");
         var mime = Str(media, "mimetype") ?? "";
         MediaType? type = mime switch
         {
@@ -57,9 +67,8 @@ public static class WebhookEndpoints
             _ when mime.StartsWith("video/") => MediaType.Video,
             _ => null
         };
-        if (type is null) return Results.Ok();
+        if (type is null) return Skip($"unsupported type '{mime}'");
 
-        var log = loggers.CreateLogger("Schermpostvak.Webhook");
         var url = Str(media, "url");
         if (url is null)
         {
@@ -115,9 +124,13 @@ public static class WebhookEndpoints
             db.Chats.Add(chat);
             await db.SaveChangesAsync(ct);
         }
-        if (!chat.Enabled) return Results.Ok();
+        if (!chat.Enabled)
+        {
+            log.LogInformation("Webhook skipped: chat {Chat} is switched off", chatJid);
+            return Results.Ok();
+        }
 
-        if (await db.MediaItems.AnyAsync(m => m.WaMessageId == messageId, ct)) return Results.Ok();
+        if (await db.MediaItems.AnyAsync(m => m.WaMessageId == messageId, ct)) return Results.Ok(); // already stored
 
         // WAHA deletes its copy after a while, so fetch the file now and keep it until it is processed.
         byte[] bytes;
@@ -146,6 +159,7 @@ public static class WebhookEndpoints
 
         db.MediaItems.Add(item);
         await db.SaveChangesAsync(ct);
+        log.LogInformation("Stored {Type} {Id} from {Sender} in {Chat}", type, messageId, senderName, chatJid);
         return Results.Ok();
     }
 
