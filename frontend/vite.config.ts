@@ -5,6 +5,9 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     // During development the API runs on `dotnet run` (port 5080)
-    proxy: { '/api': 'http://localhost:5080' }
+    proxy: {
+      '/api': 'http://localhost:5080',
+      '/ws': { target: 'ws://localhost:5080', ws: true }
+    }
   }
 })

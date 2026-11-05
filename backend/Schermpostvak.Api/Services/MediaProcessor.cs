@@ -18,6 +18,7 @@ public class MediaProcessor(
     XiboClient xibo,
     IOptions<StorageOptions> storage,
     IOptions<XiboOptions> xiboOptions,
+    LiveUpdates live,
     ILogger<MediaProcessor> log)
 {
     private const int MaxAttempts = 5;
@@ -56,7 +57,7 @@ public class MediaProcessor(
                     item.RejectReason = "Dubbel (automatisch)";
                     File.Delete(incoming);
                     await db.SaveChangesAsync(ct);
-                    continue;
+                    continue; // published after the loop
                 }
 
                 var dir = Path.Combine("items", item.Id.ToString("N"));
@@ -105,6 +106,7 @@ public class MediaProcessor(
             }
             await db.SaveChangesAsync(ct);
         }
+        if (items.Any(i => i.Status != MediaStatus.Downloading)) live.Publish(LiveUpdates.Queue);
     }
 
     private async Task CreateThumbnailAsync(MediaItem item, CancellationToken ct)
@@ -168,6 +170,7 @@ public class MediaProcessor(
             }
             await db.SaveChangesAsync(ct);
         }
+        if (items.Any(i => i.Status != MediaStatus.Approved)) live.Publish(LiveUpdates.Live);
     }
 
     // 3. Xibo deletes expired media itself; we mark the items and make sure the media is gone
@@ -191,6 +194,7 @@ public class MediaProcessor(
             }
         }
         await db.SaveChangesAsync(ct);
+        if (expired.Any(i => i.Status == MediaStatus.Expired)) live.Publish(LiveUpdates.Live);
     }
 
     // 4. Remove files of rejected items after the retention period

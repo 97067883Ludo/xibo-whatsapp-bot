@@ -33,6 +33,8 @@ builder.Services.AddHttpClient<XiboClient>((sp, http) =>
     http.Timeout = TimeSpan.FromMinutes(5);
 });
 
+builder.Services.AddSingleton<LiveUpdates>();
+builder.Services.AddSingleton<WorkerSignal>();
 builder.Services.AddScoped<MediaProcessor>();
 builder.Services.AddHostedService<Worker>();
 
@@ -52,8 +54,18 @@ using (var scope = app.Services.CreateScope())
     scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureCreated();
 }
 
+app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+// Live updates for the dashboard
+app.Map("/ws", async (HttpContext context, LiveUpdates live) =>
+{
+    if (!context.WebSockets.IsWebSocketRequest) return Results.BadRequest("WebSocket expected");
+    using var socket = await context.WebSockets.AcceptWebSocketAsync();
+    await live.HandleAsync(socket, context.RequestAborted);
+    return Results.Empty;
+});
 
 app.MapWebhookEndpoints();
 app.MapApiEndpoints();

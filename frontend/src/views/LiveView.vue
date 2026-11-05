@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
-import { api, formatDateTime, refreshStatus, type Item } from '../api'
+import { api, formatDateTime, onLiveUpdate, refreshStatus, type Item } from '../api'
 
 const items = ref<Item[]>([])
 const loading = ref(true)
@@ -8,6 +8,7 @@ const toast = ref<{ text: string; error?: boolean } | null>(null)
 const removing = ref<string | null>(null)
 const retrying = ref<string | null>(null)
 let timer: number | undefined
+const stopLive = onLiveUpdate(['live'], load)
 
 function showToast(text: string, error = false) {
   toast.value = { text, error }
@@ -63,7 +64,7 @@ onMounted(() => {
     if (items.value.some((i) => i.status === 'Approved' && !scheduled(i))) { load(); refreshStatus() }
   }, 5000)
 })
-onUnmounted(() => window.clearInterval(timer))
+onUnmounted(() => { window.clearInterval(timer); stopLive() })
 </script>
 
 <template>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { SliderRange, SliderRoot, SliderThumb, SliderTrack, ToggleGroupItem, ToggleGroupRoot } from 'reka-ui'
-import { api, formatDuration, refreshStatus, relativeTime, toDateInput, type Config, type Item } from '../api'
+import { api, formatDuration, onLiveUpdate, refreshStatus, relativeTime, toDateInput, type Config, type Item } from '../api'
 
 const items = ref<Item[]>([])
 const config = ref<Config>({ defaultDisplaySeconds: 10, tag: 'onscreen' })
@@ -162,13 +162,14 @@ async function dismissDownload(i: Item) {
 }
 
 let timer: number | undefined
+const stopLive = onLiveUpdate(['queue'], load)
 onMounted(async () => {
   try { config.value = await api.config() } catch { /* keep defaults */ }
   resetForm()
   await load()
-  timer = window.setInterval(load, 20000)
+  timer = window.setInterval(load, 60000) // fallback; live updates do the rest
 })
-onUnmounted(() => window.clearInterval(timer))
+onUnmounted(() => { window.clearInterval(timer); stopLive() })
 </script>
 
 <template>

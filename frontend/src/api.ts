@@ -112,3 +112,51 @@ export function formatDuration(seconds: number | null) {
   const s = Math.round(seconds)
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
+
+// Live updates: the backend sends { topics: [...] } over a WebSocket whenever something changes,
+// so the views reload right away instead of waiting for their polling timer.
+export type LiveTopic = 'queue' | 'live' | 'chats'
+const ALL_TOPICS: LiveTopic[] = ['queue', 'live', 'chats']
+const listeners = new Set<(topics: LiveTopic[]) => void>()
+
+/** True while the WebSocket to the backend is open. */
+export const liveConnected = ref(false)
+
+/** Calls `callback` when one of the topics changes. Returns a function that stops listening. */
+export function onLiveUpdate(topics: LiveTopic[], callback: () => void) {
+  const listener = (changed: LiveTopic[]) => { if (changed.some((t) => topics.includes(t))) callback() }
+  listeners.add(listener)
+  return () => { listeners.delete(listener) }
+}
+
+function notify(topics: LiveTopic[]) {
+  refreshStatus()
+  listeners.forEach((l) => l(topics))
+}
+
+let socket: WebSocket | null = null
+let attempts = 0
+let wasConnected = false
+
+export function connectLive() {
+  if (socket) return
+  const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
+  socket = new WebSocket(url)
+  socket.onopen = () => {
+    liveConnected.value = true
+    attempts = 0
+    if (wasConnected) notify(ALL_TOPICS) // catch up on what happened while disconnected
+    wasConnected = true
+  }
+  socket.onmessage = (e) => {
+    try {
+      const { topics } = JSON.parse(e.data) as { topics: LiveTopic[] }
+      if (Array.isArray(topics)) notify(topics)
+    } catch { /* ignore malformed messages */ }
+  }
+  socket.onclose = () => {
+    liveConnected.value = false
+    socket = null
+    window.setTimeout(connectLive, Math.min(30000, 1000 * 2 ** attempts++)) // 1s, 2s, 4s … max 30s
+  }
+}

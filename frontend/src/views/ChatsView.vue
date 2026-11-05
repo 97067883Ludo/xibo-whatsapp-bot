@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { SwitchRoot, SwitchThumb } from 'reka-ui'
-import { api, refreshStatus, type Chat } from '../api'
+import { api, onLiveUpdate, refreshStatus, type Chat } from '../api'
 
 const chats = ref<Chat[]>([])
 const loading = ref(true)
@@ -24,7 +24,9 @@ async function toggle(chat: Chat, enabled: boolean) {
   }
 }
 
+const stopLive = onLiveUpdate(['chats'], load)
 onMounted(load)
+onUnmounted(stopLive)
 </script>
 
 <template>

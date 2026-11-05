@@ -73,7 +73,7 @@ public static class ApiEndpoints
             return Results.File(files.Absolute(item.FilePath), mime, enableRangeProcessing: true);
         });
 
-        api.MapPost("/items/{id:guid}/approve", async (Guid id, ApproveRequest req, AppDbContext db, IOptions<XiboOptions> xibo, CancellationToken ct) =>
+        api.MapPost("/items/{id:guid}/approve", async (Guid id, ApproveRequest req, AppDbContext db, IOptions<XiboOptions> xibo, LiveUpdates live, WorkerSignal worker, CancellationToken ct) =>
         {
             var item = await db.MediaItems.FindAsync([id], ct);
             if (item is null) return Results.NotFound();
@@ -90,10 +90,12 @@ public static class ApiEndpoints
             item.ReviewedAt = DateTime.UtcNow;
             item.Attempts = 0;
             await db.SaveChangesAsync(ct);
+            live.Publish(LiveUpdates.Queue, LiveUpdates.Live);
+            worker.Wake();
             return Results.NoContent();
         });
 
-        api.MapPost("/items/{id:guid}/reject", async (Guid id, RejectRequest req, AppDbContext db, CancellationToken ct) =>
+        api.MapPost("/items/{id:guid}/reject", async (Guid id, RejectRequest req, AppDbContext db, LiveUpdates live, CancellationToken ct) =>
         {
             var item = await db.MediaItems.FindAsync([id], ct);
             if (item is null) return Results.NotFound();
@@ -105,6 +107,7 @@ public static class ApiEndpoints
             item.ReviewedBy = Reviewer;
             item.ReviewedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
+            live.Publish(LiveUpdates.Queue);
             return Results.NoContent();
         });
 
@@ -119,7 +122,7 @@ public static class ApiEndpoints
             return items.Select(ToDto);
         });
 
-        api.MapPost("/live/{id:guid}/remove", async (Guid id, AppDbContext db, XiboClient xibo, CancellationToken ct) =>
+        api.MapPost("/live/{id:guid}/remove", async (Guid id, AppDbContext db, XiboClient xibo, LiveUpdates live, CancellationToken ct) =>
         {
             var item = await db.MediaItems.FindAsync([id], ct);
             if (item is null) return Results.NotFound();
@@ -130,11 +133,12 @@ public static class ApiEndpoints
 
             item.Status = MediaStatus.Removed;
             await db.SaveChangesAsync(ct);
+            live.Publish(LiveUpdates.Live);
             return Results.NoContent();
         });
 
         // Try a failed item again: approved items are placed again, others are downloaded again.
-        api.MapPost("/items/{id:guid}/retry", async (Guid id, AppDbContext db, CancellationToken ct) =>
+        api.MapPost("/items/{id:guid}/retry", async (Guid id, AppDbContext db, LiveUpdates live, WorkerSignal worker, CancellationToken ct) =>
         {
             var item = await db.MediaItems.FindAsync([id], ct);
             if (item is null) return Results.NotFound();
@@ -146,6 +150,8 @@ public static class ApiEndpoints
             item.Attempts = 0;
             item.Error = null;
             await db.SaveChangesAsync(ct);
+            live.Publish(LiveUpdates.Queue, LiveUpdates.Live);
+            worker.Wake();
             return Results.NoContent();
         });
 
@@ -155,12 +161,13 @@ public static class ApiEndpoints
                 .Select(c => new ChatDto(c.Jid, c.Name, c.IsGroup, c.Enabled, DateTime.SpecifyKind(c.FirstSeenAt, DateTimeKind.Utc)))
                 .ToListAsync(ct));
 
-        api.MapPut("/chats/{jid}/enabled", async (string jid, EnableRequest req, AppDbContext db, CancellationToken ct) =>
+        api.MapPut("/chats/{jid}/enabled", async (string jid, EnableRequest req, AppDbContext db, LiveUpdates live, CancellationToken ct) =>
         {
             var chat = await db.Chats.FindAsync([jid], ct);
             if (chat is null) return Results.NotFound();
             chat.Enabled = req.Enabled;
             await db.SaveChangesAsync(ct);
+            live.Publish(LiveUpdates.Chats);
             return Results.NoContent();
         });
     }

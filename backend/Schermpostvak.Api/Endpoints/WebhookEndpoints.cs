@@ -26,6 +26,8 @@ public static class WebhookEndpoints
         string? token,
         AppDbContext db,
         WahaClient waha,
+        LiveUpdates live,
+        WorkerSignal worker,
         IOptions<WebhookOptions> options,
         IOptions<WahaOptions> wahaOptions,
         IOptions<StorageOptions> storage,
@@ -95,8 +97,10 @@ public static class WebhookEndpoints
         await StoreLock.WaitAsync(ct);
         try
         {
-            return await StoreAsync(msg, chatJid, messageId, isGroup, senderJid, senderName, type.Value, url,
-                db, waha, storage.Value, log, ct);
+            var result = await StoreAsync(msg, chatJid, messageId, isGroup, senderJid, senderName, type.Value, url,
+                db, waha, live, storage.Value, log, ct);
+            worker.Wake(); // process the new file now, not at the next tick
+            return result;
         }
         finally
         {
@@ -106,7 +110,7 @@ public static class WebhookEndpoints
 
     private static async Task<IResult> StoreAsync(
         JsonElement msg, string chatJid, string messageId, bool isGroup, string senderJid, string senderName,
-        MediaType type, string url, AppDbContext db, WahaClient waha, StorageOptions storage, ILogger log, CancellationToken ct)
+        MediaType type, string url, AppDbContext db, WahaClient waha, LiveUpdates live, StorageOptions storage, ILogger log, CancellationToken ct)
     {
         // Every chat is registered and collected from automatically; a reviewer can switch a chat off to block it.
         var chat = await db.Chats.FindAsync([chatJid], ct);
@@ -124,6 +128,7 @@ public static class WebhookEndpoints
             };
             db.Chats.Add(chat);
             await db.SaveChangesAsync(ct);
+            live.Publish(LiveUpdates.Chats);
         }
         if (!chat.Enabled)
         {

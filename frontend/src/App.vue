@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from 'vue'
-import { refreshStatus, status } from './api'
+import { connectLive, refreshStatus, status } from './api'
 
 const connected = computed(() => status.value?.whatsApp === 'WORKING')
 const chatsLabel = computed(() => {
@@ -11,7 +11,8 @@ const chatsLabel = computed(() => {
 let timer: number | undefined
 onMounted(() => {
   refreshStatus()
-  timer = window.setInterval(refreshStatus, 15000)
+  connectLive()
+  timer = window.setInterval(refreshStatus, 60000) // fallback; live updates do the rest
 })
 onUnmounted(() => window.clearInterval(timer))
 </script>
