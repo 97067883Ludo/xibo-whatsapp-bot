@@ -5,6 +5,7 @@ using ImageMagick;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Schermpostvak.Api.Data;
+using Schermpostvak.Api.Endpoints;
 
 namespace Schermpostvak.Api.Services;
 
@@ -14,7 +15,6 @@ namespace Schermpostvak.Api.Services;
 /// </summary>
 public class MediaProcessor(
     AppDbContext db,
-    EvolutionClient evolution,
     XiboClient xibo,
     IOptions<StorageOptions> storage,
     IOptions<XiboOptions> xiboOptions,
@@ -33,7 +33,7 @@ public class MediaProcessor(
 
     public string Absolute(string relative) => Path.Combine(_root, relative);
 
-    // 1. Fetch the file from WhatsApp, normalise it and put it in the review queue
+    // 1. Normalise the file the webhook received and put it in the review queue
     private async Task DownloadNewAsync(CancellationToken ct)
     {
         var items = await db.MediaItems
@@ -44,7 +44,9 @@ public class MediaProcessor(
         {
             try
             {
-                var (bytes, _) = await evolution.DownloadMediaAsync(item.WaMessageId, ct);
+                var incoming = Absolute(WebhookEndpoints.IncomingPath(item.Id));
+                if (!File.Exists(incoming)) throw new FileNotFoundException("Het bestand uit WhatsApp is niet ontvangen.");
+                var bytes = await File.ReadAllBytesAsync(incoming, ct);
                 var hash = Convert.ToHexString(SHA256.HashData(bytes));
 
                 if (await db.MediaItems.AnyAsync(m => m.Sha256 == hash && m.Id != item.Id, ct))
@@ -52,6 +54,7 @@ public class MediaProcessor(
                     item.Sha256 = hash;
                     item.Status = MediaStatus.Rejected;
                     item.RejectReason = "Dubbel (automatisch)";
+                    File.Delete(incoming);
                     await db.SaveChangesAsync(ct);
                     continue;
                 }
@@ -91,6 +94,7 @@ public class MediaProcessor(
                 item.ThumbPath = Path.Combine(dir, "thumb.jpg");
                 await CreateThumbnailAsync(item, ct);
 
+                File.Delete(incoming);
                 item.Sha256 = hash;
                 item.Status = MediaStatus.Pending;
                 item.Error = null;

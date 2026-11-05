@@ -8,9 +8,9 @@ services:
       ConnectionStrings__Default: "Data Source=/data/schermpostvak.db"
       Storage__Root: "/data/media"
       Webhook__Token: "${WEBHOOK_TOKEN}"
-      Evolution__BaseUrl: "http://evolution:8080"
-      Evolution__ApiKey: "${EVOLUTION_API_KEY}"
-      Evolution__Instance: "${EVOLUTION_INSTANCE}"
+      Waha__BaseUrl: "http://waha:3000"
+      Waha__ApiKey: "${WAHA_API_KEY}"
+      Waha__Session: "${WAHA_SESSION:-default}"
       Xibo__BaseUrl: "${XIBO_BASE_URL}"
       Xibo__ClientId: "${XIBO_CLIENT_ID}"
       Xibo__ClientSecret: "${XIBO_CLIENT_SECRET}"
@@ -18,40 +18,30 @@ services:
     volumes:
       - ./data/backend:/data
     depends_on:
-      - evolution
+      - waha
 
-  evolution:
-    # WhatsApp gateway (Baileys-based). The project moved from atendai/ to evoapicloud/.
-    # Pin a specific version tag from https://hub.docker.com/r/evoapicloud/evolution-api/tags once it works.
-    image: evoapicloud/evolution-api:latest
+  waha:
+    # WhatsApp gateway. Pin a version tag from https://hub.docker.com/r/devlikeapro/waha/tags once it works.
+    image: devlikeapro/waha:latest
     restart: unless-stopped
     ports:
-      - "8081:8080" # manager UI at http://localhost:8081/manager (scan the QR code here)
+      - "3000:3000" # dashboard at http://localhost:3000/dashboard (scan the QR code here)
     environment:
-      SERVER_URL: "http://localhost:8081"
-      AUTHENTICATION_API_KEY: "${EVOLUTION_API_KEY}"
-      DATABASE_ENABLED: "true"
-      DATABASE_PROVIDER: "postgresql"
-      DATABASE_CONNECTION_URI: "postgresql://evolution:${POSTGRES_PASSWORD}@postgres:5432/evolution?schema=public"
-      DATABASE_SAVE_DATA_INSTANCE: "true"
-      DATABASE_SAVE_DATA_NEW_MESSAGE: "true" # needed: the backend downloads media by message id
-      CACHE_REDIS_ENABLED: "false"
-      CACHE_LOCAL_ENABLED: "true"
-      WEBHOOK_GLOBAL_ENABLED: "true"
-      WEBHOOK_GLOBAL_URL: "http://backend:8080/webhook/evolution?token=${WEBHOOK_TOKEN}"
-      WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: "false"
-      WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
+      WAHA_API_KEY: "${WAHA_API_KEY}"
+      WAHA_DASHBOARD_USERNAME: "${WAHA_DASHBOARD_USERNAME:-admin}"
+      WAHA_DASHBOARD_PASSWORD: "${WAHA_DASHBOARD_PASSWORD}"
+      WHATSAPP_SWAGGER_USERNAME: "${WAHA_DASHBOARD_USERNAME:-admin}"
+      WHATSAPP_SWAGGER_PASSWORD: "${WAHA_DASHBOARD_PASSWORD}"
+      # GOWS is lightweight (no browser inside the container)
+      WHATSAPP_DEFAULT_ENGINE: "GOWS"
+      WHATSAPP_RESTART_ALL_SESSIONS: "True"
+      # Webhook for every session; the backend only handles incoming messages
+      WHATSAPP_HOOK_URL: "http://backend:8080/webhook/waha?token=${WEBHOOK_TOKEN}"
+      WHATSAPP_HOOK_EVENTS: "message"
+      WAHA_EVENTS_DOWNLOAD_MEDIA: "true"
+      # Host used in media.url; the backend fetches files from here
+      WAHA_BASE_URL: "http://waha:3000"
+      # Keep received files for an hour, so webhook retries can still fetch them
+      WHATSAPP_FILES_LIFETIME: "3600"
     volumes:
-      - ./data/evolution:/evolution/instances
-    depends_on:
-      - postgres
-
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: evolution
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
-      POSTGRES_DB: evolution
-    volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      - ./data/waha/sessions:/app/.sessions

@@ -3,7 +3,7 @@
 .env.*
 !.env.example
 
-# Docker volumes (Evolution session, Postgres, backend data)
+# Docker volumes (WAHA session, backend data)
 /data/
 
 # OS

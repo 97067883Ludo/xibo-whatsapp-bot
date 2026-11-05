@@ -11,11 +11,11 @@ public class WebhookOptions
     public string Token { get; set; } = "";
 }
 
-public class EvolutionOptions
+public class WahaOptions
 {
     public string BaseUrl { get; set; } = "";
     public string ApiKey { get; set; } = "";
-    public string Instance { get; set; } = "";
+    public string Session { get; set; } = "default";
 }
 
 public class XiboOptions

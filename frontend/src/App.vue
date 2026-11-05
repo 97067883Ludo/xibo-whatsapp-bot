@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 import { refreshStatus, status } from './api'
 
-const connected = computed(() => status.value?.whatsApp === 'open')
+const connected = computed(() => status.value?.whatsApp === 'WORKING')
 const chatsLabel = computed(() => {
   const n = status.value?.enabledChats ?? 0
   return n === 1 ? '1 chat actief' : `${n} chats actief`

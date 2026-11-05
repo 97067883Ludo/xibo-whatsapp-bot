@@ -11,17 +11,17 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Storage"));
 builder.Services.Configure<WebhookOptions>(builder.Configuration.GetSection("Webhook"));
-builder.Services.Configure<EvolutionOptions>(builder.Configuration.GetSection("Evolution"));
+builder.Services.Configure<WahaOptions>(builder.Configuration.GetSection("Waha"));
 builder.Services.Configure<XiboOptions>(builder.Configuration.GetSection("Xibo"));
 
 var connectionString = builder.Configuration.GetConnectionString("Default")!;
 builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(connectionString));
 
-builder.Services.AddHttpClient<EvolutionClient>((sp, http) =>
+builder.Services.AddHttpClient<WahaClient>((sp, http) =>
 {
-    var o = sp.GetRequiredService<IOptions<EvolutionOptions>>().Value;
+    var o = sp.GetRequiredService<IOptions<WahaOptions>>().Value;
     http.BaseAddress = new Uri(o.BaseUrl.TrimEnd('/') + "/");
-    http.DefaultRequestHeaders.Add("apikey", o.ApiKey);
+    http.DefaultRequestHeaders.Add("X-Api-Key", o.ApiKey);
     http.Timeout = TimeSpan.FromMinutes(2);
 });
 

@@ -209,7 +209,7 @@ onUnmounted(() => window.clearInterval(timer))
         <div v-if="failed.length" class="failed-box" role="region" aria-label="Niet opgehaald">
           <div class="failed-head">
             <strong>{{ failed.length === 1 ? '1 item kon niet worden opgehaald' : `${failed.length} items konden niet worden opgehaald` }}</strong>
-            <span>Probeer het opnieuw. Lukt het weer niet, dan is het bestand waarschijnlijk niet meer beschikbaar in WhatsApp.</span>
+            <span>Probeer het opnieuw. Lukt het weer niet, dan is het bestand waarschijnlijk beschadigd of in een formaat dat niet wordt ondersteund.</span>
           </div>
           <ul class="failed-list">
             <li v-for="i in failed" :key="i.id">

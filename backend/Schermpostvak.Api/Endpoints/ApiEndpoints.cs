@@ -29,9 +29,9 @@ public static class ApiEndpoints
     {
         var api = app.MapGroup("/api");
 
-        api.MapGet("/status", async (AppDbContext db, EvolutionClient evolution, CancellationToken ct) => new
+        api.MapGet("/status", async (AppDbContext db, WahaClient waha, CancellationToken ct) => new
         {
-            WhatsApp = await evolution.GetConnectionStateAsync(ct),
+            WhatsApp = await waha.GetConnectionStateAsync(ct),
             Pending = await db.MediaItems.CountAsync(m => m.Status == MediaStatus.Pending, ct),
             Live = await db.MediaItems.CountAsync(m => m.Status == MediaStatus.Live || m.Status == MediaStatus.Approved, ct),
             FailedDownloads = await db.MediaItems.CountAsync(m => m.Status == MediaStatus.Failed && m.ReviewedAt == null, ct),
