@@ -132,7 +132,7 @@ public class MediaProcessor(
         var now = DateTime.Now;
         var items = await db.MediaItems
             .Where(m => m.Status == MediaStatus.Approved && m.Attempts < MaxAttempts && m.ShowFrom <= now && m.ShowUntil > now)
-            .Take(5).ToListAsync(ct);
+            .OrderBy(m => m.ReviewedAt).Take(5).ToListAsync(ct);
 
         foreach (var item in items)
         {

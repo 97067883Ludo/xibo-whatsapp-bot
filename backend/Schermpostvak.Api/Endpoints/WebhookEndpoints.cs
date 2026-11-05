@@ -50,10 +50,11 @@ public static class WebhookEndpoints
         var hasMediaObject = msg.TryGetProperty("media", out var m0) && m0.ValueKind == JsonValueKind.Object;
         if (!Bool(msg, "hasMedia") && !hasMediaObject) return Results.Ok(); // plain text
 
-        // For our own messages "from" is the bot's number and "to" is the chat
+        // For our own messages the engines differ: WEBJS puts the chat in "to", GOWS leaves "to" empty
+        // and puts the chat in "from". The id ("true_<chat>_<id>") always contains the chat.
         var fromMe = Bool(msg, "fromMe");
-        var chatJid = fromMe ? Str(msg, "to") : Str(msg, "from");
         var messageId = Str(msg, "id");
+        var chatJid = fromMe ? Str(msg, "to") ?? ChatFromId(messageId) ?? Str(msg, "from") : Str(msg, "from");
         log.LogInformation("Webhook {Event}: media message {Id} in {Chat} (fromMe: {FromMe})", evt, messageId, chatJid, fromMe);
         if (chatJid is null || messageId is null) return Skip($"no chat or message id (from={Str(msg, "from")}, to={Str(msg, "to")})");
         if (chatJid == "status@broadcast" || chatJid.EndsWith("@newsletter")) return Skip("status or channel update");
@@ -161,6 +162,13 @@ public static class WebhookEndpoints
         await db.SaveChangesAsync(ct);
         log.LogInformation("Stored {Type} {Id} from {Sender} in {Chat}", type, messageId, senderName, chatJid);
         return Results.Ok();
+    }
+
+    /// <summary>WAHA message ids look like "true_31612345678@c.us_3EB0..."; returns the chat part.</summary>
+    private static string? ChatFromId(string? id)
+    {
+        var parts = id?.Split('_');
+        return parts is { Length: >= 3 } && parts[1].Contains('@') ? parts[1] : null;
     }
 
     /// <summary>The sender's own WhatsApp name, if the engine includes it in the message.</summary>
